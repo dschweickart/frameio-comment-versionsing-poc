@@ -1,0 +1,273 @@
+import { getSession } from '@/lib/auth/crypto';
+import { refreshAccessToken } from '@/lib/auth/oauth';
+
+export class FrameioClient {
+  private accessToken: string;
+  private refreshToken: string;
+  private expiresAt: number;
+
+  constructor(accessToken: string, refreshToken: string, expiresAt: number) {
+    this.accessToken = accessToken;
+    this.refreshToken = refreshToken;
+    this.expiresAt = expiresAt;
+  }
+
+  // Create client from session
+  static async fromSession(): Promise<FrameioClient | null> {
+    const session = await getSession();
+    if (!session) return null;
+
+    const expiresAt = session.tokens.obtained_at + (session.tokens.expires_in * 1000);
+    
+    return new FrameioClient(
+      session.tokens.access_token,
+      session.tokens.refresh_token,
+      expiresAt
+    );
+  }
+
+  // Ensure token is valid, refresh if needed
+  private async ensureValidToken(): Promise<void> {
+    const now = Date.now();
+    const refreshThreshold = 60000; // Refresh 1 minute before expiry
+
+    if (now >= (this.expiresAt - refreshThreshold)) {
+      try {
+        const newTokens = await refreshAccessToken(this.refreshToken);
+        this.accessToken = newTokens.access_token;
+        this.refreshToken = newTokens.refresh_token;
+        this.expiresAt = newTokens.obtained_at + (newTokens.expires_in * 1000);
+      } catch (error) {
+        console.error('Token refresh failed:', error);
+        throw new Error('Authentication expired. Please sign in again.');
+      }
+    }
+  }
+
+  // Make authenticated API request
+  private async apiRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    await this.ensureValidToken();
+
+    const url = `${process.env.FRAMEIO_API_BASE_URL}${endpoint}`;
+    
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        'Authorization': `Bearer ${this.accessToken}`,
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorMessage: string;
+      
+      try {
+        const errorData = JSON.parse(errorText);
+        errorMessage = errorData.message || errorData.error || `HTTP ${response.status}`;
+      } catch {
+        errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+      }
+
+      throw new Error(`Frame.io API error: ${errorMessage}`);
+    }
+
+    // Handle empty responses
+    const contentType = response.headers.get('content-type');
+    if (!contentType?.includes('application/json')) {
+      return {} as T;
+    }
+
+    return response.json();
+  }
+
+  // User and Account methods
+  async getCurrentUser(): Promise<any> {
+    return this.apiRequest('/me');
+  }
+
+  async getAccounts(): Promise<any> {
+    return this.apiRequest('/accounts');
+  }
+
+  // Project methods
+  async getProjects(accountId: string): Promise<any> {
+    return this.apiRequest(`/accounts/${accountId}/projects`);
+  }
+
+  async getProject(accountId: string, projectId: string): Promise<any> {
+    return this.apiRequest(`/accounts/${accountId}/projects/${projectId}`);
+  }
+
+  // Asset methods
+  async getAssets(projectId: string, parentAssetId?: string): Promise<any> {
+    const endpoint = parentAssetId 
+      ? `/projects/${projectId}/assets/${parentAssetId}/children`
+      : `/projects/${projectId}/assets`;
+    return this.apiRequest(endpoint);
+  }
+
+  async getAsset(assetId: string): Promise<any> {
+    return this.apiRequest(`/assets/${assetId}`);
+  }
+
+  async getAssetChildren(assetId: string): Promise<any> {
+    return this.apiRequest(`/assets/${assetId}/children`);
+  }
+
+  // Comment methods
+  async getComments(assetId: string): Promise<any> {
+    return this.apiRequest(`/assets/${assetId}/comments`);
+  }
+
+  async createComment(assetId: string, commentData: {
+    text: string;
+    timestamp?: number;
+    page?: number;
+    annotation?: any;
+  }): Promise<any> {
+    return this.apiRequest(`/assets/${assetId}/comments`, {
+      method: 'POST',
+      body: JSON.stringify(commentData)
+    });
+  }
+
+  async updateComment(commentId: string, commentData: {
+    text?: string;
+    timestamp?: number;
+    page?: number;
+  }): Promise<any> {
+    return this.apiRequest(`/comments/${commentId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(commentData)
+    });
+  }
+
+  async deleteComment(commentId: string): Promise<void> {
+    await this.apiRequest(`/comments/${commentId}`, {
+      method: 'DELETE'
+    });
+  }
+
+  // File upload methods
+  async createAsset(parentAssetId: string, assetData: {
+    name: string;
+    type: 'file' | 'folder';
+    filetype?: string;
+    filesize?: number;
+  }): Promise<any> {
+    return this.apiRequest(`/assets/${parentAssetId}/children`, {
+      method: 'POST',
+      body: JSON.stringify(assetData)
+    });
+  }
+
+  // Webhook methods
+  async getWebhooks(accountId: string): Promise<any> {
+    return this.apiRequest(`/accounts/${accountId}/webhooks`);
+  }
+
+  async createWebhook(accountId: string, webhookData: {
+    url: string;
+    events: string[];
+    name?: string;
+    secret?: string;
+  }): Promise<any> {
+    return this.apiRequest(`/accounts/${accountId}/webhooks`, {
+      method: 'POST',
+      body: JSON.stringify(webhookData)
+    });
+  }
+
+  async updateWebhook(accountId: string, webhookId: string, webhookData: {
+    url?: string;
+    events?: string[];
+    active?: boolean;
+  }): Promise<any> {
+    return this.apiRequest(`/accounts/${accountId}/webhooks/${webhookId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(webhookData)
+    });
+  }
+
+  async deleteWebhook(accountId: string, webhookId: string): Promise<void> {
+    await this.apiRequest(`/accounts/${accountId}/webhooks/${webhookId}`, {
+      method: 'DELETE'
+    });
+  }
+
+  // Team and collaboration methods
+  async getTeamMembers(accountId: string): Promise<any> {
+    return this.apiRequest(`/accounts/${accountId}/members`);
+  }
+
+  async getProjectCollaborators(projectId: string): Promise<any> {
+    return this.apiRequest(`/projects/${projectId}/collaborators`);
+  }
+
+  // Search methods
+  async searchAssets(query: string, accountId?: string): Promise<any> {
+    const params = new URLSearchParams({ q: query });
+    if (accountId) params.append('account_id', accountId);
+    
+    return this.apiRequest(`/search/assets?${params.toString()}`);
+  }
+
+  // Utility methods
+  async downloadAsset(assetId: string): Promise<Blob> {
+    await this.ensureValidToken();
+
+    const response = await fetch(`${process.env.FRAMEIO_API_BASE_URL}/assets/${assetId}/download`, {
+      headers: {
+        'Authorization': `Bearer ${this.accessToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to download asset: HTTP ${response.status}`);
+    }
+
+    return response.blob();
+  }
+
+  // Rate limiting helper
+  private async withRateLimit<T>(operation: () => Promise<T>): Promise<T> {
+    try {
+      return await operation();
+    } catch (error: any) {
+      if (error.message?.includes('429') || error.message?.includes('rate limit')) {
+        // Wait 1 second and retry once
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        return operation();
+      }
+      throw error;
+    }
+  }
+
+  // Batch operations with rate limiting
+  async batchCreateComments(assetId: string, comments: Array<{
+    text: string;
+    timestamp?: number;
+    page?: number;
+  }>): Promise<any[]> {
+    const results = [];
+    
+    for (const comment of comments) {
+      try {
+        const result = await this.withRateLimit(() => 
+          this.createComment(assetId, comment)
+        );
+        results.push(result);
+        
+        // Small delay between requests to respect rate limits
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } catch (error) {
+        console.error('Failed to create comment:', error);
+        results.push({ error: error.message });
+      }
+    }
+    
+    return results;
+  }
+}
