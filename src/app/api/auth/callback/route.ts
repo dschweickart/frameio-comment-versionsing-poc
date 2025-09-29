@@ -65,9 +65,13 @@ export async function GET(request: NextRequest) {
     const userEmail = String(userData.email || '');
     const userName = String(userData.name || '');
 
-    // Get first account ID (simplification: store single active token)
+    // Get account ID (use first account with admin role, or first account if none)
     // TODO: Support multiple accounts in future
-    const accountData = accounts[0] as Record<string, unknown>;
+    const adminAccount = accounts.find(acc => {
+      const roles = (acc as Record<string, unknown>).roles as string[] | undefined;
+      return roles?.includes('admin') || roles?.includes('owner');
+    }) || accounts[0];
+    const accountData = adminAccount as Record<string, unknown>;
     const accountId = String(accountData?.id || '');
 
     console.log('💾 Extracted data:', { userId, accountId, userEmail, userName, accountCount: accounts.length });

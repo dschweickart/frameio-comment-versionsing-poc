@@ -15,6 +15,7 @@
     "db:studio": "drizzle-kit studio",
     "db:setup": "node -e \"console.log('Run the SQL in src/lib/db/migrations/001_initial_setup.sql manually in your Neon database console')\"",
     "db:test": "npx tsx src/lib/db/test-connection.ts",
+    "test:version-stack": "npx tsx scripts/test-version-stack-hardcoded.ts",
     "postbuild": "node scripts/setup-database.js"
   },
   "dependencies": {
