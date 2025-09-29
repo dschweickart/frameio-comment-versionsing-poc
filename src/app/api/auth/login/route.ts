@@ -15,10 +15,14 @@ export async function GET(request: NextRequest) {
     const state = generateState();
 
     // Build redirect URI dynamically from request
-    const host = request.headers.get('host');
-    const protocol = request.headers.get('x-forwarded-proto') || 'https';
-    const baseUrl = `${protocol}://${host}`;
-    const redirectUri = `${baseUrl}/api/auth/callback`;
+    // Can be overridden with NEXT_PUBLIC_AUTH_URL for custom domains
+    const redirectUri = process.env.NEXT_PUBLIC_AUTH_URL 
+      ? `${process.env.NEXT_PUBLIC_AUTH_URL}/api/auth/callback`
+      : (() => {
+          const host = request.headers.get('host');
+          const protocol = request.headers.get('x-forwarded-proto') || 'https';
+          return `${protocol}://${host}/api/auth/callback`;
+        })();
 
     // Store PKCE parameters in secure cookies for callback verification
     const cookieStore = await cookies();
