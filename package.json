@@ -19,6 +19,7 @@
     "@ai-sdk/openai": "^2.0.39",
     "@neondatabase/serverless": "^1.0.1",
     "ai": "^5.0.57",
+    "dotenv": "^17.2.2",
     "drizzle-orm": "^0.44.5",
     "next": "15.5.4",
     "react": "19.1.0",

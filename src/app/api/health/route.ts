@@ -28,8 +28,8 @@ export async function GET() {
         connected: true,
         version,
         pgvector: hasPgVector,
-        tables: tables.map(t => t.table_name),
-        tablesCount: tables.length
+        tables: Array.isArray(tables) ? tables.map(t => t.table_name) : [],
+        tablesCount: Array.isArray(tables) ? tables.length : 0
       }
     });
     

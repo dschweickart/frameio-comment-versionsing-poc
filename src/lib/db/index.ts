@@ -2,12 +2,17 @@ import { drizzle } from 'drizzle-orm/neon-http';
 import { neon } from '@neondatabase/serverless';
 import * as schema from './schema';
 
-if (!process.env.DATABASE_URL) {
-  throw new Error('DATABASE_URL environment variable is required');
+// Load environment variables in development
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config({ path: '.env.local' });
+}
+
+if (!process.env.DATABASE_URL && !process.env.POSTGRES_URL) {
+  throw new Error('DATABASE_URL or POSTGRES_URL environment variable is required');
 }
 
 // Create Neon HTTP connection
-const sql = neon(process.env.DATABASE_URL);
+const sql = neon(process.env.DATABASE_URL || process.env.POSTGRES_URL!);
 
 // Initialize Drizzle ORM with schema
 export const db = drizzle(sql, { schema });
