@@ -12,5 +12,5 @@
       "path": "/api/cleanup",
       "schedule": "0 2 * * *"
     }
-  ],
+  ]
 }
