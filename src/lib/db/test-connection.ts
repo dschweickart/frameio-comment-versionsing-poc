@@ -1,10 +1,6 @@
 import { db } from './index';
 import { sql } from 'drizzle-orm';
 
-interface DatabaseRow {
-  [key: string]: unknown;
-}
-
 interface VersionResult {
   version: string;
 }

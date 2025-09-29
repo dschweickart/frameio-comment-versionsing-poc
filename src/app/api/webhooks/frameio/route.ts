@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
           data: logData
         })
       });
-    } catch (e) {
+    } catch {
       // Silent fail for debug logging
     }
     

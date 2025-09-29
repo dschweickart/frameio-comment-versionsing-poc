@@ -1,6 +1,7 @@
 'use client';
 
 import { useAuth } from '@/lib/auth/context';
+import Image from 'next/image';
 
 export function LoginButton() {
   const { user, loading, login, logout } = useAuth();
@@ -16,10 +17,12 @@ export function LoginButton() {
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-3">
           {user.avatar_url && (
-            <img 
+            <Image 
               src={user.avatar_url} 
               alt={user.name}
-              className="w-8 h-8 rounded-full border-2 border-gray-200"
+              width={32}
+              height={32}
+              className="rounded-full border-2 border-gray-200"
             />
           )}
           <div className="text-sm">

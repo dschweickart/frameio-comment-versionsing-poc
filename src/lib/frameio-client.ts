@@ -40,13 +40,6 @@ interface ApiResponse<T = unknown> {
   [key: string]: T;
 }
 
-interface CreateCommentRequest {
-  text: string;
-  timestamp?: number;
-  x?: number;
-  y?: number;
-}
-
 export class FrameioClient {
   private accessToken: string;
   private refreshToken: string;
