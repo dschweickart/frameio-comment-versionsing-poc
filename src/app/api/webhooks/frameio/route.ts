@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 
 interface FrameioWebhookPayload {
-  event: string;
+  event?: string;
+  type?: string; // Frame.io sends "type" for Custom Actions
   timestamp: string;
   resource: {
     type: string;
@@ -11,13 +12,14 @@ interface FrameioWebhookPayload {
   };
   user: {
     id: string;
-    name: string;
-    email: string;
+    name?: string;
+    email?: string;
   };
-  account: {
+  account?: {
     id: string;
     name: string;
   };
+  account_id?: string;
   interaction_id?: string;
   action_id?: string;
   data?: Record<string, unknown>;
@@ -84,13 +86,14 @@ export async function POST(request: NextRequest) {
     const payload: FrameioWebhookPayload = JSON.parse(body);
     
     // Console log the webhook for debugging
+    const eventType = payload.type || payload.event; // Frame.io sends "type" for Custom Actions
     const logData = {
-      event: payload.event,
+      event: eventType,
       resourceType: payload.resource?.type,
       resourceId: payload.resource?.id,
       userId: payload.user?.id,
       userName: payload.user?.name,
-      accountId: payload.account?.id,
+      accountId: payload.account?.id || payload.account_id,
       accountName: payload.account?.name,
       verified: isVerified,
       timestamp: new Date().toISOString(),
@@ -127,7 +130,7 @@ export async function POST(request: NextRequest) {
         ...response,
         debug: {
           webhook_received: true,
-          event: payload.event,
+          event: eventType,
           timestamp: new Date().toISOString(),
           logs_working: 'Console logs should appear in Vercel dashboard'
         }
@@ -138,7 +141,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ 
       success: true, 
       message: 'Webhook processed successfully',
-      event: payload.event,
+      event: eventType,
       timestamp: new Date().toISOString(),
       debug: {
         webhook_received: true,
@@ -161,7 +164,8 @@ export async function POST(request: NextRequest) {
 }
 
 async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormCallbackResponse | MessageCallbackResponse | null> {
-  switch (payload.event) {
+  const eventType = payload.type || payload.event; // Frame.io sends "type" for Custom Actions
+  switch (eventType) {
     case 'custom_action.triggered':
       const actionLog = {
         actionId: payload.resource?.id,
@@ -244,7 +248,7 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
       break;
       
     default:
-      console.log('📋 Other Event:', payload.event);
+      console.log('📋 Other Event:', eventType);
   }
   
   return null;
