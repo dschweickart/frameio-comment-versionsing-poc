@@ -225,6 +225,14 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
         const accountId = payload.account?.id || payload.account_id;
         const fileId = payload.resource?.id;
         
+        console.log('🔍 Custom action debug:', {
+          accountId,
+          fileId,
+          hasAccount: !!payload.account,
+          accountIdDirect: payload.account_id,
+          accountObject: payload.account
+        });
+        
         if (!accountId || !fileId) {
           return {
             title: "Error ❌",
@@ -233,14 +241,18 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
         }
         
         // Create Frame.io client from stored tokens
+        console.log(`🔑 Looking for tokens with account_id: ${accountId}`);
         const client = await FrameioClient.fromAccountId(accountId);
         
         if (!client) {
+          console.error(`❌ No tokens found for account_id: ${accountId}`);
           return {
             title: "Authentication Required ❌",
-            description: "Please sign in to the application first to enable AI comment transfer."
+            description: `Please sign in to the application first. (Searched for account: ${accountId})`
           };
         }
+        
+        console.log('✅ Client created successfully from stored tokens');
         
         // Get file details
         const file = await client.getFile(accountId, fileId);

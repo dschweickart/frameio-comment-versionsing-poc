@@ -80,11 +80,24 @@ export async function getUserTokens(userId: string): Promise<UserToken | null> {
  * @returns User tokens or null if not found
  */
 export async function getUserTokensByAccountId(accountId: string): Promise<UserToken | null> {
+  console.log(`🔍 Searching for tokens with account_id: ${accountId}`);
+  
   const result = await db
     .select()
     .from(userTokens)
     .where(eq(userTokens.accountId, accountId))
     .limit(1);
+
+  console.log(`📊 Query result:`, result.length > 0 ? 'Found token' : 'No token found');
+  
+  if (result.length > 0) {
+    console.log(`✅ Token found for account: ${accountId}, user: ${result[0].userId}`);
+  } else {
+    console.log(`❌ No token found for account: ${accountId}`);
+    // Log all account IDs to help debug
+    const allTokens = await db.select({ accountId: userTokens.accountId, userId: userTokens.userId }).from(userTokens);
+    console.log(`📋 Available account_ids in database:`, allTokens);
+  }
 
   return result[0] || null;
 }
