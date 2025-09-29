@@ -12,7 +12,8 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "db:setup": "node -e \"console.log('Run the SQL in src/lib/db/migrations/001_initial_setup.sql manually in your Neon database console')\"",
-    "db:test": "npx tsx src/lib/db/test-connection.ts"
+    "db:test": "npx tsx src/lib/db/test-connection.ts",
+    "postbuild": "node scripts/setup-database.js"
   },
   "dependencies": {
     "@ai-sdk/openai": "^2.0.39",

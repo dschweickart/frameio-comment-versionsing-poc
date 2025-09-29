@@ -1,0 +1,27 @@
+{
+  "functions": {
+    "app/api/webhooks/frameio/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/process/route.ts": {
+      "maxDuration": 900
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cleanup",
+      "schedule": "0 2 * * *"
+    }
+  ],
+  "env": {
+    "DATABASE_URL": "@postgres_url",
+    "POSTGRES_URL": "@postgres_url",
+    "POSTGRES_PRISMA_URL": "@postgres_prisma_url",
+    "POSTGRES_URL_NON_POOLING": "@postgres_url_non_pooling"
+  },
+  "build": {
+    "env": {
+      "DATABASE_URL": "@postgres_url"
+    }
+  }
+}

@@ -1,0 +1,24 @@
+# Vercel ignore patterns
+.env.local
+.env*.local
+.DS_Store
+*.log
+node_modules
+.next
+out
+dist
+
+# Database files
+drizzle/
+*.db
+*.sqlite
+
+# Development files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Documentation (optional - remove if you want docs deployed)
+DATABASE_SETUP.md
+PHASE1_SUMMARY.md
