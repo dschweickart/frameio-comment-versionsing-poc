@@ -59,13 +59,16 @@ export async function GET(request: NextRequest) {
     const accounts = await getUserAccounts(tokens.access_token);
     console.log('📋 Accounts from /accounts:', JSON.stringify(accounts, null, 2));
 
-    // Extract user details
-    const userId = String(userInfo.user_id || userInfo.id || '');
-    const userEmail = String(userInfo.email || '');
-    const userName = String(userInfo.name || '');
-    
-    // Get first account ID (user can have multiple accounts)
-    const accountId = accounts.length > 0 ? String((accounts[0] as Record<string, unknown>).id || '') : '';
+    // Extract user details - data is nested under 'data' key
+    const userData = (userInfo as { data?: Record<string, unknown> }).data || userInfo;
+    const userId = String(userData.id || '');
+    const userEmail = String(userData.email || '');
+    const userName = String(userData.name || '');
+
+    // Get first account ID (simplification: store single active token)
+    // TODO: Support multiple accounts in future
+    const accountData = accounts[0] as Record<string, unknown>;
+    const accountId = String(accountData?.id || '');
 
     console.log('💾 Extracted data:', { userId, accountId, userEmail, userName, accountCount: accounts.length });
 
