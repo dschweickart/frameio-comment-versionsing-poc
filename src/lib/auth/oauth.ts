@@ -113,6 +113,27 @@ export async function getUserInfo(accessToken: string): Promise<UserInfo> {
   return response.json();
 }
 
+// Get accounts that user has access to
+export async function getUserAccounts(accessToken: string): Promise<unknown[]> {
+  const response = await fetch(`${process.env.FRAMEIO_API_BASE_URL}/accounts`, {
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new AuthError(
+      'Failed to get accounts',
+      'accounts_failed',
+      response.status
+    );
+  }
+
+  const data = await response.json();
+  return data.data || data || [];
+}
+
 // Build authorization URL
 export function buildAuthUrl(
   codeChallenge: string, 

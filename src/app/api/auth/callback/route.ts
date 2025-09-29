@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { exchangeCodeForTokens, getUserInfo, handleAuthError } from '@/lib/auth/oauth';
+import { exchangeCodeForTokens, getUserInfo, getUserAccounts, handleAuthError } from '@/lib/auth/oauth';
 import { setSession } from '@/lib/auth/crypto';
 import { saveUserTokens } from '@/lib/auth/token-storage';
 
@@ -51,15 +51,23 @@ export async function GET(request: NextRequest) {
     
     const tokens = await exchangeCodeForTokens(code, codeVerifier, redirectUri);
 
-    // Get user information
+    // Get user information from /me endpoint
     const userInfo = await getUserInfo(tokens.access_token);
+    console.log('📋 User info from /me:', JSON.stringify(userInfo, null, 2));
 
+    // Get accounts that user has access to
+    const accounts = await getUserAccounts(tokens.access_token);
+    console.log('📋 Accounts from /accounts:', JSON.stringify(accounts, null, 2));
+
+    // Extract user details
     const userId = String(userInfo.user_id || userInfo.id || '');
     const userEmail = String(userInfo.email || '');
     const userName = String(userInfo.name || '');
-    const accountId = String(userInfo.account_id || '');
+    
+    // Get first account ID (user can have multiple accounts)
+    const accountId = accounts.length > 0 ? String((accounts[0] as Record<string, unknown>).id || '') : '';
 
-    console.log('💾 Saving tokens to database:', { userId, accountId, userEmail });
+    console.log('💾 Extracted data:', { userId, accountId, userEmail, userName, accountCount: accounts.length });
 
     // Save tokens to database for server-side access
     try {
