@@ -2,11 +2,6 @@ import { drizzle } from 'drizzle-orm/neon-http';
 import { neon } from '@neondatabase/serverless';
 import * as schema from './schema';
 
-// Load environment variables in development
-if (process.env.NODE_ENV !== 'production') {
-  require('dotenv').config({ path: '.env.local' });
-}
-
 if (!process.env.DATABASE_URL && !process.env.POSTGRES_URL) {
   throw new Error('DATABASE_URL or POSTGRES_URL environment variable is required');
 }
