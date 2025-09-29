@@ -18,6 +18,7 @@ export interface SessionData {
     avatar_url?: string;
   };
   tokens: TokenData;
+  [key: string]: unknown; // Index signature for JWT compatibility
 }
 
 // Encrypt session data into JWT
@@ -70,7 +71,7 @@ export function generateState(): string {
 
 // Get session from cookies
 export async function getSession(): Promise<SessionData | null> {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const sessionCookie = cookieStore.get('session');
   
   if (!sessionCookie?.value) {
@@ -87,7 +88,7 @@ export async function getSession(): Promise<SessionData | null> {
 
 // Set session in cookies
 export async function setSession(sessionData: SessionData): Promise<void> {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const encrypted = await encrypt(sessionData);
   
   cookieStore.set('session', encrypted, {
@@ -100,7 +101,7 @@ export async function setSession(sessionData: SessionData): Promise<void> {
 }
 
 // Clear session
-export function clearSession(): void {
-  const cookieStore = cookies();
+export async function clearSession(): Promise<void> {
+  const cookieStore = await cookies();
   cookieStore.delete('session');
 }

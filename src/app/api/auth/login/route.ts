@@ -14,12 +14,14 @@ export async function GET(request: NextRequest) {
     const codeChallenge = await generateCodeChallenge(codeVerifier);
     const state = generateState();
 
-    // Build redirect URI
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://localhost:3000';
+    // Build redirect URI dynamically from request
+    const host = request.headers.get('host');
+    const protocol = request.headers.get('x-forwarded-proto') || 'https';
+    const baseUrl = `${protocol}://${host}`;
     const redirectUri = `${baseUrl}/api/auth/callback`;
 
     // Store PKCE parameters in secure cookies for callback verification
-    const cookieStore = cookies();
+    const cookieStore = await cookies();
     cookieStore.set('oauth_code_verifier', codeVerifier, {
       httpOnly: true,
       secure: true,

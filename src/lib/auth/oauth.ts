@@ -1,5 +1,13 @@
 import { TokenData } from './crypto';
 
+interface UserInfo {
+  user_id: string;
+  name: string;
+  email: string;
+  avatar?: string;
+  [key: string]: unknown;
+}
+
 export class AuthError extends Error {
   constructor(
     message: string,
@@ -86,7 +94,7 @@ export async function exchangeCodeForTokens(
 }
 
 // Get user info from Frame.io API
-export async function getUserInfo(accessToken: string): Promise<any> {
+export async function getUserInfo(accessToken: string): Promise<UserInfo> {
   const response = await fetch(`${process.env.FRAMEIO_API_BASE_URL}/me`, {
     headers: {
       'Authorization': `Bearer ${accessToken}`,
@@ -125,7 +133,7 @@ export function buildAuthUrl(
 }
 
 // Handle auth errors
-export function handleAuthError(error: any): { error?: string; redirect?: string } {
+export function handleAuthError(error: unknown): { error?: string; redirect?: string } {
   console.error('Auth error:', error);
 
   if (error instanceof AuthError) {

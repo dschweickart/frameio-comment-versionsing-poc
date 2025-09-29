@@ -1,6 +1,22 @@
 import { db } from './index';
 import { sql } from 'drizzle-orm';
 
+interface DatabaseRow {
+  [key: string]: unknown;
+}
+
+interface VersionResult {
+  version: string;
+}
+
+interface TableResult {
+  table_name: string;
+}
+
+interface DistanceResult {
+  distance: number;
+}
+
 /**
  * Test database connection and pgvector extension
  * Run with: npx tsx src/lib/db/test-connection.ts
@@ -12,11 +28,11 @@ export async function testDatabaseConnection() {
     // Test basic connection
     const result = await db.execute(sql`SELECT version()`);
     console.log('✅ Database connected successfully');
-    console.log('PostgreSQL version:', result[0]?.version?.substring(0, 50) + '...');
+    console.log('PostgreSQL version:', (result.rows[0] as unknown as VersionResult)?.version?.substring(0, 50) + '...');
     
     // Test pgvector extension
     const vectorResult = await db.execute(sql`SELECT extname FROM pg_extension WHERE extname = 'vector'`);
-    if (vectorResult.length > 0) {
+    if (vectorResult.rows.length > 0) {
       console.log('✅ pgvector extension is enabled');
     } else {
       console.log('❌ pgvector extension not found');
@@ -24,7 +40,7 @@ export async function testDatabaseConnection() {
     
     // Test vector operations
     const vectorTest = await db.execute(sql`SELECT '[1,2,3]'::vector(3) <-> '[4,5,6]'::vector(3) as distance`);
-    console.log('✅ Vector operations working, test distance:', vectorTest[0]?.distance);
+    console.log('✅ Vector operations working, test distance:', (vectorTest.rows[0] as unknown as DistanceResult)?.distance);
     
     // Test tables exist
     const tables = await db.execute(sql`
@@ -35,9 +51,9 @@ export async function testDatabaseConnection() {
       ORDER BY table_name
     `);
     
-    console.log('📋 Tables found:', tables.map(t => t.table_name).join(', '));
+    console.log('📋 Tables found:', tables.rows.map((t) => (t as unknown as TableResult).table_name).join(', '));
     
-    if (tables.length === 4) {
+    if (tables.rows.length === 4) {
       console.log('✅ All required tables are present');
     } else {
       console.log('❌ Missing tables. Please run the migration SQL.');

@@ -4,7 +4,7 @@ import { clearSession } from '@/lib/auth/crypto';
 export async function POST() {
   try {
     // Clear the session cookie
-    clearSession();
+    await clearSession();
 
     return NextResponse.json({ success: true });
   } catch (error) {

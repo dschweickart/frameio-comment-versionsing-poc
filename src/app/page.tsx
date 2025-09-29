@@ -3,10 +3,16 @@
 import { useAuth } from '@/lib/auth/context';
 import { LoginButton } from '@/components/auth/LoginButton';
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 
-export default function Home() {
-  const { user, loading } = useAuth();
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  avatar_url?: string;
+}
+
+function AuthMessage() {
   const searchParams = useSearchParams();
   const [message, setMessage] = useState<string | null>(null);
 
@@ -20,6 +26,24 @@ export default function Home() {
       setMessage('Successfully authenticated with Frame.io!');
     }
   }, [searchParams]);
+
+  if (message) {
+    return (
+      <div className={`p-4 rounded-md mb-6 ${
+        message.includes('error') 
+          ? 'bg-red-50 border border-red-200 text-red-700'
+          : 'bg-green-50 border border-green-200 text-green-700'
+      }`}>
+        {message}
+      </div>
+    );
+  }
+
+  return null;
+}
+
+export default function Home() {
+  const { user, loading } = useAuth();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -40,15 +64,9 @@ export default function Home() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {/* Status Messages */}
-        {message && (
-          <div className={`mb-8 p-4 rounded-md ${
-            message.includes('error') 
-              ? 'bg-red-50 border border-red-200 text-red-700'
-              : 'bg-green-50 border border-green-200 text-green-700'
-          }`}>
-            {message}
-          </div>
-        )}
+        <Suspense fallback={<div>Loading...</div>}>
+          <AuthMessage />
+        </Suspense>
 
         {loading ? (
           <div className="flex items-center justify-center py-12">
@@ -122,7 +140,16 @@ function UnauthenticatedView() {
   );
 }
 
-function AuthenticatedView({ user }: { user: any }) {
+function AuthenticatedView({ user }: { user: User }) {
+  const [webhookUrl, setWebhookUrl] = useState<string>('');
+
+  useEffect(() => {
+    // Get the current webhook URL dynamically
+    if (typeof window !== 'undefined') {
+      setWebhookUrl(`${window.location.origin}/api/webhooks/frameio`);
+    }
+  }, []);
+
   return (
     <div className="max-w-4xl mx-auto">
       <div className="bg-white rounded-lg shadow-lg p-8">
@@ -131,7 +158,7 @@ function AuthenticatedView({ user }: { user: any }) {
             Welcome back, {user.name}!
           </h2>
           <p className="text-gray-600">
-            You're authenticated with Frame.io. The comment versioning system is ready to use.
+            You&apos;re authenticated with Frame.io. The comment versioning system is ready to use.
           </p>
         </div>
 
@@ -195,6 +222,36 @@ function AuthenticatedView({ user }: { user: any }) {
               </li>
             </ul>
           </div>
+        </div>
+
+        <div className="mt-8 bg-blue-50 border border-blue-200 rounded-lg p-6">
+          <h4 className="font-semibold text-blue-800 mb-4">🔗 Webhook Configuration</h4>
+          <p className="text-blue-700 mb-3">
+            Use this URL in your Frame.io Custom Action configuration:
+          </p>
+          <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
+            <div className="flex items-center justify-between">
+              <code className="text-sm font-mono text-gray-800 break-all flex-1 mr-4">
+                {webhookUrl || 'Loading webhook URL...'}
+              </code>
+              <button
+                onClick={() => {
+                  if (webhookUrl) {
+                    navigator.clipboard.writeText(webhookUrl);
+                    alert('Webhook URL copied to clipboard!');
+                  }
+                }}
+                disabled={!webhookUrl}
+                className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                📋 Copy URL
+              </button>
+            </div>
+          </div>
+          <p className="text-sm text-blue-600">
+            💡 <strong>Tip:</strong> This URL updates automatically with each deployment. 
+            The form callback is working - you&apos;ll see an interactive form when triggering the custom action.
+          </p>
         </div>
 
         <div className="mt-8 bg-green-50 border border-green-200 rounded-lg p-6">

@@ -1,6 +1,52 @@
 import { getSession } from '@/lib/auth/crypto';
 import { refreshAccessToken } from '@/lib/auth/oauth';
 
+// Frame.io API response types
+interface FrameioUser {
+  id: string;
+  name: string;
+  email: string;
+  avatar_url?: string;
+  [key: string]: unknown;
+}
+
+interface FrameioProject {
+  id: string;
+  name: string;
+  description?: string;
+  [key: string]: unknown;
+}
+
+interface FrameioAsset {
+  id: string;
+  name: string;
+  type: string;
+  parent_id?: string;
+  project_id: string;
+  [key: string]: unknown;
+}
+
+interface FrameioComment {
+  id: string;
+  text: string;
+  timestamp?: number;
+  x?: number;
+  y?: number;
+  asset_id: string;
+  [key: string]: unknown;
+}
+
+interface ApiResponse<T = unknown> {
+  [key: string]: T;
+}
+
+interface CreateCommentRequest {
+  text: string;
+  timestamp?: number;
+  x?: number;
+  y?: number;
+}
+
 export class FrameioClient {
   private accessToken: string;
   private refreshToken: string;
@@ -83,41 +129,41 @@ export class FrameioClient {
   }
 
   // User and Account methods
-  async getCurrentUser(): Promise<any> {
+  async getCurrentUser(): Promise<FrameioUser> {
     return this.apiRequest('/me');
   }
 
-  async getAccounts(): Promise<any> {
+  async getAccounts(): Promise<ApiResponse[]> {
     return this.apiRequest('/accounts');
   }
 
   // Project methods
-  async getProjects(accountId: string): Promise<any> {
+  async getProjects(accountId: string): Promise<FrameioProject[]> {
     return this.apiRequest(`/accounts/${accountId}/projects`);
   }
 
-  async getProject(accountId: string, projectId: string): Promise<any> {
+  async getProject(accountId: string, projectId: string): Promise<FrameioProject> {
     return this.apiRequest(`/accounts/${accountId}/projects/${projectId}`);
   }
 
   // Asset methods
-  async getAssets(projectId: string, parentAssetId?: string): Promise<any> {
+  async getAssets(projectId: string, parentAssetId?: string): Promise<FrameioAsset[]> {
     const endpoint = parentAssetId 
       ? `/projects/${projectId}/assets/${parentAssetId}/children`
       : `/projects/${projectId}/assets`;
     return this.apiRequest(endpoint);
   }
 
-  async getAsset(assetId: string): Promise<any> {
+  async getAsset(assetId: string): Promise<FrameioAsset> {
     return this.apiRequest(`/assets/${assetId}`);
   }
 
-  async getAssetChildren(assetId: string): Promise<any> {
+  async getAssetChildren(assetId: string): Promise<FrameioAsset[]> {
     return this.apiRequest(`/assets/${assetId}/children`);
   }
 
   // Comment methods
-  async getComments(assetId: string): Promise<any> {
+  async getComments(assetId: string): Promise<FrameioComment[]> {
     return this.apiRequest(`/assets/${assetId}/comments`);
   }
 
@@ -125,8 +171,8 @@ export class FrameioClient {
     text: string;
     timestamp?: number;
     page?: number;
-    annotation?: any;
-  }): Promise<any> {
+    annotation?: unknown;
+  }): Promise<FrameioComment> {
     return this.apiRequest(`/assets/${assetId}/comments`, {
       method: 'POST',
       body: JSON.stringify(commentData)
@@ -137,7 +183,7 @@ export class FrameioClient {
     text?: string;
     timestamp?: number;
     page?: number;
-  }): Promise<any> {
+  }): Promise<FrameioComment> {
     return this.apiRequest(`/comments/${commentId}`, {
       method: 'PATCH',
       body: JSON.stringify(commentData)
@@ -156,7 +202,7 @@ export class FrameioClient {
     type: 'file' | 'folder';
     filetype?: string;
     filesize?: number;
-  }): Promise<any> {
+  }): Promise<FrameioAsset> {
     return this.apiRequest(`/assets/${parentAssetId}/children`, {
       method: 'POST',
       body: JSON.stringify(assetData)
@@ -164,7 +210,7 @@ export class FrameioClient {
   }
 
   // Webhook methods
-  async getWebhooks(accountId: string): Promise<any> {
+  async getWebhooks(accountId: string): Promise<ApiResponse[]> {
     return this.apiRequest(`/accounts/${accountId}/webhooks`);
   }
 
@@ -173,7 +219,7 @@ export class FrameioClient {
     events: string[];
     name?: string;
     secret?: string;
-  }): Promise<any> {
+  }): Promise<ApiResponse> {
     return this.apiRequest(`/accounts/${accountId}/webhooks`, {
       method: 'POST',
       body: JSON.stringify(webhookData)
@@ -184,7 +230,7 @@ export class FrameioClient {
     url?: string;
     events?: string[];
     active?: boolean;
-  }): Promise<any> {
+  }): Promise<ApiResponse> {
     return this.apiRequest(`/accounts/${accountId}/webhooks/${webhookId}`, {
       method: 'PATCH',
       body: JSON.stringify(webhookData)
@@ -198,16 +244,16 @@ export class FrameioClient {
   }
 
   // Team and collaboration methods
-  async getTeamMembers(accountId: string): Promise<any> {
+  async getTeamMembers(accountId: string): Promise<ApiResponse[]> {
     return this.apiRequest(`/accounts/${accountId}/members`);
   }
 
-  async getProjectCollaborators(projectId: string): Promise<any> {
+  async getProjectCollaborators(projectId: string): Promise<ApiResponse[]> {
     return this.apiRequest(`/projects/${projectId}/collaborators`);
   }
 
   // Search methods
-  async searchAssets(query: string, accountId?: string): Promise<any> {
+  async searchAssets(query: string, accountId?: string): Promise<FrameioAsset[]> {
     const params = new URLSearchParams({ q: query });
     if (accountId) params.append('account_id', accountId);
     
@@ -235,8 +281,9 @@ export class FrameioClient {
   private async withRateLimit<T>(operation: () => Promise<T>): Promise<T> {
     try {
       return await operation();
-    } catch (error: any) {
-      if (error.message?.includes('429') || error.message?.includes('rate limit')) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('429') || errorMessage.includes('rate limit')) {
         // Wait 1 second and retry once
         await new Promise(resolve => setTimeout(resolve, 1000));
         return operation();
@@ -250,7 +297,7 @@ export class FrameioClient {
     text: string;
     timestamp?: number;
     page?: number;
-  }>): Promise<any[]> {
+  }>): Promise<Array<FrameioComment | { error: string }>> {
     const results = [];
     
     for (const comment of comments) {
@@ -264,7 +311,7 @@ export class FrameioClient {
         await new Promise(resolve => setTimeout(resolve, 100));
       } catch (error) {
         console.error('Failed to create comment:', error);
-        results.push({ error: error.message });
+        results.push({ error: error instanceof Error ? error.message : String(error) });
       }
     }
     

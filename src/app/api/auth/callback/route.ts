@@ -4,6 +4,11 @@ import { exchangeCodeForTokens, getUserInfo, handleAuthError } from '@/lib/auth/
 import { setSession } from '@/lib/auth/crypto';
 
 export async function GET(request: NextRequest) {
+  // Get base URL from request headers (available for both try and catch)
+  const host = request.headers.get('host');
+  const protocol = request.headers.get('x-forwarded-proto') || 'https';
+  const baseUrl = `${protocol}://${host}`;
+
   try {
     const { searchParams } = new URL(request.url);
     const code = searchParams.get('code');
@@ -14,24 +19,24 @@ export async function GET(request: NextRequest) {
     if (error) {
       const errorDescription = searchParams.get('error_description');
       console.error('OAuth error:', error, errorDescription);
-      return NextResponse.redirect(`${process.env.NEXT_PUBLIC_BASE_URL}/?error=${encodeURIComponent(errorDescription || error)}`);
+      return NextResponse.redirect(`${baseUrl}/?error=${encodeURIComponent(errorDescription || error)}`);
     }
 
     if (!code || !state) {
-      return NextResponse.redirect(`${process.env.NEXT_PUBLIC_BASE_URL}/?error=missing_parameters`);
+      return NextResponse.redirect(`${baseUrl}/?error=missing_parameters`);
     }
 
     // Verify state and get code verifier from cookies
-    const cookieStore = cookies();
+    const cookieStore = await cookies();
     const storedState = cookieStore.get('oauth_state')?.value;
     const codeVerifier = cookieStore.get('oauth_code_verifier')?.value;
 
     if (!storedState || !codeVerifier) {
-      return NextResponse.redirect(`${process.env.NEXT_PUBLIC_BASE_URL}/?error=invalid_session`);
+      return NextResponse.redirect(`${baseUrl}/?error=invalid_session`);
     }
 
     if (storedState !== state) {
-      return NextResponse.redirect(`${process.env.NEXT_PUBLIC_BASE_URL}/?error=invalid_state`);
+      return NextResponse.redirect(`${baseUrl}/?error=invalid_state`);
     }
 
     // Clear OAuth cookies
@@ -39,7 +44,6 @@ export async function GET(request: NextRequest) {
     cookieStore.delete('oauth_code_verifier');
 
     // Exchange code for tokens
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://localhost:3000';
     const redirectUri = `${baseUrl}/api/auth/callback`;
     
     const tokens = await exchangeCodeForTokens(code, codeVerifier, redirectUri);
@@ -50,10 +54,10 @@ export async function GET(request: NextRequest) {
     // Create session
     const sessionData = {
       user: {
-        id: userInfo.id,
-        name: userInfo.name,
-        email: userInfo.email,
-        avatar_url: userInfo.avatar_url
+        id: String(userInfo.user_id || userInfo.id || ''),
+        name: String(userInfo.name || ''),
+        email: String(userInfo.email || ''),
+        avatar_url: userInfo.avatar ? String(userInfo.avatar) : undefined
       },
       tokens
     };
@@ -61,7 +65,7 @@ export async function GET(request: NextRequest) {
     await setSession(sessionData);
 
     // Redirect to success page
-    return NextResponse.redirect(`${process.env.NEXT_PUBLIC_BASE_URL}/?auth=success`);
+    return NextResponse.redirect(`${baseUrl}/?auth=success`);
   } catch (error) {
     console.error('Callback error:', error);
     const { error: errorMessage, redirect } = handleAuthError(error);
@@ -71,7 +75,7 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.redirect(
-      `${process.env.NEXT_PUBLIC_BASE_URL}/?error=${encodeURIComponent(errorMessage || 'Authentication failed')}`
+      `${baseUrl}/?error=${encodeURIComponent(errorMessage || 'Authentication failed')}`
     );
   }
 }
