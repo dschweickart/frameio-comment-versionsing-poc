@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { exchangeCodeForTokens, getUserInfo, handleAuthError } from '@/lib/auth/oauth';
 import { setSession } from '@/lib/auth/crypto';
+import { saveUserTokens } from '@/lib/auth/token-storage';
 
 export async function GET(request: NextRequest) {
   // Get base URL from request headers (available for both try and catch)
@@ -51,12 +52,27 @@ export async function GET(request: NextRequest) {
     // Get user information
     const userInfo = await getUserInfo(tokens.access_token);
 
+    const userId = String(userInfo.user_id || userInfo.id || '');
+    const userEmail = String(userInfo.email || '');
+    const userName = String(userInfo.name || '');
+
+    // Save tokens to database for server-side access
+    await saveUserTokens(
+      userId,
+      tokens,
+      {
+        accountId: String(userInfo.account_id || ''),
+        email: userEmail,
+        name: userName,
+      }
+    );
+
     // Create session
     const sessionData = {
       user: {
-        id: String(userInfo.user_id || userInfo.id || ''),
-        name: String(userInfo.name || ''),
-        email: String(userInfo.email || ''),
+        id: userId,
+        name: userName,
+        email: userEmail,
         avatar_url: userInfo.avatar ? String(userInfo.avatar) : undefined
       },
       tokens

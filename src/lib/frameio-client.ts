@@ -1,5 +1,6 @@
 import { getSession } from '@/lib/auth/crypto';
 import { refreshAccessToken } from '@/lib/auth/oauth';
+import { getUserTokensByAccountId, saveUserTokens, isTokenExpired } from '@/lib/auth/token-storage';
 
 // Frame.io API response types
 export interface FrameioUser {
@@ -89,6 +90,50 @@ export class FrameioClient {
       session.tokens.access_token,
       session.tokens.refresh_token,
       expiresAt
+    );
+  }
+
+  // Create client from database tokens (for server-side operations)
+  static async fromAccountId(accountId: string): Promise<FrameioClient | null> {
+    const userToken = await getUserTokensByAccountId(accountId);
+    if (!userToken) {
+      console.error('No tokens found for account:', accountId);
+      return null;
+    }
+
+    // Check if token needs refresh
+    if (isTokenExpired(userToken.expiresAt)) {
+      try {
+        // Refresh the token
+        const newTokens = await refreshAccessToken(userToken.refreshToken);
+        
+        // Save refreshed tokens back to database
+        await saveUserTokens(
+          userToken.userId,
+          newTokens,
+          {
+            accountId: userToken.accountId || undefined,
+            email: userToken.email || undefined,
+            name: userToken.name || undefined,
+          }
+        );
+
+        const newExpiresAt = newTokens.obtained_at + (newTokens.expires_in * 1000);
+        return new FrameioClient(
+          newTokens.access_token,
+          newTokens.refresh_token,
+          newExpiresAt
+        );
+      } catch (error) {
+        console.error('Failed to refresh token for account:', accountId, error);
+        return null;
+      }
+    }
+
+    return new FrameioClient(
+      userToken.accessToken,
+      userToken.refreshToken,
+      userToken.expiresAt.getTime()
     );
   }
 

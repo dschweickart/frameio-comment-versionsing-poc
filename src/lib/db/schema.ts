@@ -54,6 +54,20 @@ export const processingJobs = pgTable('processing_jobs', {
   completedAt: timestamp('completed_at'),
 });
 
+// User tokens table - stores OAuth tokens for server-side access
+export const userTokens = pgTable('user_tokens', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: varchar('user_id', { length: 255 }).unique().notNull(), // Frame.io user ID
+  accessToken: text('access_token').notNull(),
+  refreshToken: text('refresh_token').notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+  accountId: varchar('account_id', { length: 255 }),
+  email: varchar('email', { length: 255 }),
+  name: varchar('name', { length: 255 }),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
 // Define relations between tables
 export const videosRelations = relations(videos, ({ many }) => ({
   frames: many(frames),
@@ -101,3 +115,6 @@ export type NewComment = typeof comments.$inferInsert;
 
 export type ProcessingJob = typeof processingJobs.$inferSelect;
 export type NewProcessingJob = typeof processingJobs.$inferInsert;
+
+export type UserToken = typeof userTokens.$inferSelect;
+export type NewUserToken = typeof userTokens.$inferInsert;
