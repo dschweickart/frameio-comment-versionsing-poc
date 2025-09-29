@@ -11,10 +11,12 @@ export async function GET(request: NextRequest) {
   const baseUrl = `${protocol}://${host}`;
 
   try {
+    console.log('🔄 OAuth callback received');
     const { searchParams } = new URL(request.url);
     const code = searchParams.get('code');
     const state = searchParams.get('state');
     const error = searchParams.get('error');
+    console.log('Callback params:', { hasCode: !!code, hasState: !!state, hasError: !!error });
 
     // Handle OAuth errors
     if (error) {
@@ -80,10 +82,13 @@ export async function GET(request: NextRequest) {
 
     await setSession(sessionData);
 
+    console.log('✅ Session created successfully, redirecting to:', `${baseUrl}/?auth=success`);
+    
     // Redirect to success page
     return NextResponse.redirect(`${baseUrl}/?auth=success`);
   } catch (error) {
-    console.error('Callback error:', error);
+    console.error('❌ Callback error:', error);
+    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
     const { error: errorMessage, redirect } = handleAuthError(error);
     
     if (redirect) {
