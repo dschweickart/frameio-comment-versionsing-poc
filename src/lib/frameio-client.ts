@@ -232,12 +232,14 @@ export class FrameioClient {
 
   // File methods (V4 API)
   async getFile(accountId: string, fileId: string): Promise<FrameioFile> {
-    return this.apiRequest(`/accounts/${accountId}/files/${fileId}`);
+    const response = await this.apiRequest<{ data: FrameioFile }>(`/accounts/${accountId}/files/${fileId}`);
+    return response.data;
   }
 
   // Version Stack methods (V4 API - Stable)
   async getVersionStack(accountId: string, versionStackId: string): Promise<FrameioVersionStack> {
-    return this.apiRequest(`/accounts/${accountId}/version_stacks/${versionStackId}`);
+    const response = await this.apiRequest<{ data: FrameioVersionStack }>(`/accounts/${accountId}/version_stacks/${versionStackId}`);
+    return response.data;
   }
 
   async listVersionStackChildren(accountId: string, versionStackId: string): Promise<FrameioFile[]> {
