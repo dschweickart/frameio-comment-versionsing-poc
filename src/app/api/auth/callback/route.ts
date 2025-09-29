@@ -57,17 +57,27 @@ export async function GET(request: NextRequest) {
     const userId = String(userInfo.user_id || userInfo.id || '');
     const userEmail = String(userInfo.email || '');
     const userName = String(userInfo.name || '');
+    const accountId = String(userInfo.account_id || '');
+
+    console.log('💾 Saving tokens to database:', { userId, accountId, userEmail });
 
     // Save tokens to database for server-side access
-    await saveUserTokens(
-      userId,
-      tokens,
-      {
-        accountId: String(userInfo.account_id || ''),
-        email: userEmail,
-        name: userName,
-      }
-    );
+    try {
+      await saveUserTokens(
+        userId,
+        tokens,
+        {
+          accountId,
+          email: userEmail,
+          name: userName,
+        }
+      );
+      console.log('✅ Tokens saved to database successfully');
+    } catch (dbError) {
+      console.error('❌ Failed to save tokens to database:', dbError);
+      console.error('Database error details:', dbError instanceof Error ? dbError.message : 'Unknown error');
+      // Continue anyway - session cookie will still work for this session
+    }
 
     // Create session
     const sessionData = {
