@@ -43,11 +43,14 @@ export interface FrameioFile {
   type: 'file' | 'folder' | 'version_stack';
   parent_id?: string;
   project_id?: string;
+  status?: string; // 'transcoded', 'uploaded', etc.
+  file_size?: number; // API returns file_size (underscore)
+  filesize?: number; // Legacy property
+  media_type?: string;
   media_links?: {
     video_h264_720?: string;
     [key: string]: unknown;
   };
-  filesize?: number;
   fps?: number;
   duration?: number;
   [key: string]: unknown;

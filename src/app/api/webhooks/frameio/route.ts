@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { FrameioClient } from '@/lib/frameio-client';
-import { db, processingJobs, NewProcessingJob } from '@/lib/db/schema';
+import { db, processingJobs, NewProcessingJob } from '@/lib/db';
 
 interface FrameioWebhookPayload {
   event?: string;
@@ -243,8 +243,7 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
         }
         
         // Get file details
-        const fileResponse = await client.apiRequest<{ data: any }>(`/accounts/${accountId}/files/${fileId}`);
-        const file = fileResponse.data;
+        const file = await client.getFile(accountId, fileId);
         
         if (!file.parent_id) {
           return {
@@ -254,8 +253,7 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
         }
         
         // List version stack children (siblings)
-        const childrenResponse = await client.apiRequest<{ data: any[] }>(`/accounts/${accountId}/version_stacks/${file.parent_id}/children`);
-        const allVersions = childrenResponse.data;
+        const allVersions = await client.listVersionStackChildren(accountId, file.parent_id);
         
         // Filter out the target file to get source options
         const sourceFiles = allVersions.filter(v => v.id !== fileId && v.status === 'transcoded');
@@ -284,7 +282,7 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
               name: "source_file_id",
               value: sourceFiles[0].id,
               options: sourceFiles.map(sf => ({
-                name: `${sf.name} (${(sf.file_size / 1024 / 1024).toFixed(1)} MB)`,
+                name: `${sf.name} (${((sf.file_size || 0) / 1024 / 1024).toFixed(1)} MB)`,
                 value: sf.id
               }))
             },
