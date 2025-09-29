@@ -42,8 +42,8 @@ export const comments = pgTable('comments', {
 // Processing jobs table - tracks comment transfer operations
 export const processingJobs = pgTable('processing_jobs', {
   id: uuid('id').primaryKey().defaultRandom(),
-  sourceVideoId: uuid('source_video_id').references(() => videos.id).notNull(),
-  targetVideoId: uuid('target_video_id').references(() => videos.id).notNull(),
+  sourceVideoId: uuid('source_video_id').references(() => videos.id),
+  targetVideoId: uuid('target_video_id').references(() => videos.id),
   status: varchar('status', { length: 50 }).default('pending'),
   progress: decimal('progress', { precision: 3, scale: 2 }).default('0'),
   message: text('message'),
@@ -52,6 +52,17 @@ export const processingJobs = pgTable('processing_jobs', {
   errorMessage: text('error_message'),
   createdAt: timestamp('created_at').defaultNow(),
   completedAt: timestamp('completed_at'),
+  // Frame.io specific fields
+  accountId: varchar('account_id', { length: 255 }),
+  projectId: varchar('project_id', { length: 255 }),
+  versionStackId: varchar('version_stack_id', { length: 255 }),
+  sourceFileId: varchar('source_file_id', { length: 255 }),
+  targetFileId: varchar('target_file_id', { length: 255 }),
+  interactionId: varchar('interaction_id', { length: 255 }),
+  userId: varchar('user_id', { length: 255 }),
+  userName: varchar('user_name', { length: 255 }),
+  userEmail: varchar('user_email', { length: 255 }),
+  metadata: text('metadata'), // JSON string for additional data
 });
 
 // User tokens table - stores OAuth tokens for server-side access

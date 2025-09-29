@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
+import { FrameioClient } from '@/lib/frameio-client';
+import { db, processingJobs, NewProcessingJob } from '@/lib/db/schema';
 
 interface FrameioWebhookPayload {
   event?: string;
@@ -180,58 +182,145 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
       if (payload.data) {
         console.log('📝 Form Data Received:', payload.data);
         
-        // Process the form data and return success message
-        return {
-          title: "Success! 🎉",
-          description: `Comment versioning initiated for ${payload.resource?.type} "${payload.data.target_version || 'selected asset'}". AI analysis in progress...`
-        };
+        // Save processing job to database
+        try {
+          const accountId = payload.account?.id || payload.account_id;
+          const newJob: NewProcessingJob = {
+            accountId,
+            projectId: (payload.resource as { project_id?: string })?.project_id,
+            versionStackId: payload.data.version_stack_id as string,
+            sourceFileId: payload.data.source_file_id as string,
+            targetFileId: payload.resource?.id,
+            interactionId: payload.interaction_id,
+            userId: payload.user?.id,
+            userName: payload.user?.name,
+            userEmail: payload.user?.email,
+            status: 'pending',
+            metadata: JSON.stringify({
+              sensitivity: payload.data.sensitivity,
+              sourceFileName: payload.data.source_file_name,
+              targetFileName: payload.data.target_file_name,
+              triggeredAt: new Date().toISOString(),
+            }),
+          };
+          
+          const [job] = await db.insert(processingJobs).values(newJob).returning();
+          console.log('✅ Processing job created:', job.id);
+          
+          return {
+            title: "Success! 🎉",
+            description: `AI comment transfer initiated from "${payload.data.source_file_name}" to "${payload.data.target_file_name}". Processing will begin shortly...`
+          };
+        } catch (error) {
+          console.error('❌ Failed to create processing job:', error);
+          return {
+            title: "Error ❌",
+            description: `Failed to initiate processing: ${error instanceof Error ? error.message : 'Unknown error'}`
+          };
+        }
       }
       
-      // Initial trigger - return form to collect user input
-      return {
-        title: "AI Comment Transfer",
-        description: "Transfer comments from this video to another version using AI-powered visual matching.",
-        fields: [
-          {
-            type: "text",
-            label: "Target Version Name",
-            name: "target_version",
-            value: "v2_final.mp4"
-          },
-          {
-            type: "select",
-            label: "Matching Sensitivity",
-            name: "sensitivity",
-            value: "medium",
-            options: [
-              {
-                name: "High (Strict matching)",
-                value: "high"
-              },
-              {
-                name: "Medium (Balanced)",
-                value: "medium"
-              },
-              {
-                name: "Low (Flexible matching)",
-                value: "low"
-              }
-            ]
-          },
-          {
-            type: "boolean",
-            label: "Preview Before Transfer",
-            name: "preview_mode",
-            value: "true"
-          },
-          {
-            type: "textarea",
-            label: "Additional Notes",
-            name: "notes",
-            value: "AI-powered comment transfer between video versions"
-          }
-        ]
-      };
+      // Initial trigger - validate version stack and return dynamic form
+      try {
+        const accountId = payload.account?.id || payload.account_id;
+        const fileId = payload.resource?.id;
+        
+        if (!accountId || !fileId) {
+          return {
+            title: "Error ❌",
+            description: "Missing required data (account_id or file_id). Please try again."
+          };
+        }
+        
+        // Create Frame.io client from stored tokens
+        const client = await FrameioClient.fromAccountId(accountId);
+        
+        if (!client) {
+          return {
+            title: "Authentication Required ❌",
+            description: "Please sign in to the application first to enable AI comment transfer."
+          };
+        }
+        
+        // Get file details
+        const fileResponse = await client.apiRequest<{ data: any }>(`/accounts/${accountId}/files/${fileId}`);
+        const file = fileResponse.data;
+        
+        if (!file.parent_id) {
+          return {
+            title: "Not in Version Stack ❌",
+            description: `The file "${file.name}" is not part of a version stack. Please add it to a version stack first.`
+          };
+        }
+        
+        // List version stack children (siblings)
+        const childrenResponse = await client.apiRequest<{ data: any[] }>(`/accounts/${accountId}/version_stacks/${file.parent_id}/children`);
+        const allVersions = childrenResponse.data;
+        
+        // Filter out the target file to get source options
+        const sourceFiles = allVersions.filter(v => v.id !== fileId && v.status === 'transcoded');
+        
+        if (sourceFiles.length === 0) {
+          return {
+            title: "No Other Versions ❌",
+            description: `No other transcoded versions found in this version stack. You need at least 2 versions to transfer comments.`
+          };
+        }
+        
+        // Build form with dynamic source file options
+        return {
+          title: "AI Comment Transfer",
+          description: `Transfer comments to "${file.name}" from another version in the stack.`,
+          fields: [
+            {
+              type: "text",
+              label: "Target File (current)",
+              name: "target_file_name",
+              value: file.name
+            },
+            {
+              type: "select",
+              label: "Source File (copy comments from)",
+              name: "source_file_id",
+              value: sourceFiles[0].id,
+              options: sourceFiles.map(sf => ({
+                name: `${sf.name} (${(sf.file_size / 1024 / 1024).toFixed(1)} MB)`,
+                value: sf.id
+              }))
+            },
+            {
+              type: "text",
+              label: "Version Stack ID (hidden)",
+              name: "version_stack_id",
+              value: file.parent_id
+            },
+            {
+              type: "text",
+              label: "Source File Name (hidden)",
+              name: "source_file_name",
+              value: sourceFiles[0].name
+            },
+            {
+              type: "select",
+              label: "Matching Sensitivity",
+              name: "sensitivity",
+              value: "medium",
+              options: [
+                { name: "High (Strict matching)", value: "high" },
+                { name: "Medium (Balanced)", value: "medium" },
+                { name: "Low (Flexible matching)", value: "low" }
+              ]
+            }
+          ]
+        };
+        
+      } catch (error) {
+        console.error('❌ Version stack validation failed:', error);
+        return {
+          title: "Error ❌",
+          description: `Failed to validate version stack: ${error instanceof Error ? error.message : 'Unknown error'}`
+        };
+      }
       
     case 'asset.created':
       console.log('📁 Asset Created:', {
