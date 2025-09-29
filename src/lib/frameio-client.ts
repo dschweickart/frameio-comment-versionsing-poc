@@ -2,7 +2,7 @@ import { getSession } from '@/lib/auth/crypto';
 import { refreshAccessToken } from '@/lib/auth/oauth';
 
 // Frame.io API response types
-interface FrameioUser {
+export interface FrameioUser {
   id: string;
   name: string;
   email: string;
@@ -10,14 +10,14 @@ interface FrameioUser {
   [key: string]: unknown;
 }
 
-interface FrameioProject {
+export interface FrameioProject {
   id: string;
   name: string;
   description?: string;
   [key: string]: unknown;
 }
 
-interface FrameioAsset {
+export interface FrameioAsset {
   id: string;
   name: string;
   type: string;
@@ -26,13 +26,40 @@ interface FrameioAsset {
   [key: string]: unknown;
 }
 
-interface FrameioComment {
+export interface FrameioComment {
   id: string;
   text: string;
   timestamp?: number;
   x?: number;
   y?: number;
   asset_id: string;
+  [key: string]: unknown;
+}
+
+export interface FrameioFile {
+  id: string;
+  name: string;
+  type: 'file' | 'folder' | 'version_stack';
+  parent_id?: string;
+  project_id?: string;
+  media_links?: {
+    video_h264_720?: string;
+    [key: string]: unknown;
+  };
+  filesize?: number;
+  fps?: number;
+  duration?: number;
+  [key: string]: unknown;
+}
+
+export interface FrameioVersionStack {
+  id: string;
+  name: string;
+  type: 'version_stack';
+  parent_id: string;
+  project_id: string;
+  version_count?: number;
+  latest_version_id?: string;
   [key: string]: unknown;
 }
 
@@ -153,6 +180,33 @@ export class FrameioClient {
 
   async getAssetChildren(assetId: string): Promise<FrameioAsset[]> {
     return this.apiRequest(`/assets/${assetId}/children`);
+  }
+
+  // File methods (V4 API)
+  async getFile(accountId: string, fileId: string): Promise<FrameioFile> {
+    return this.apiRequest(`/accounts/${accountId}/files/${fileId}`);
+  }
+
+  // Version Stack methods (V4 API - Stable)
+  async getVersionStack(accountId: string, versionStackId: string): Promise<FrameioVersionStack> {
+    return this.apiRequest(`/accounts/${accountId}/version_stacks/${versionStackId}`);
+  }
+
+  async listVersionStackChildren(accountId: string, versionStackId: string): Promise<FrameioFile[]> {
+    const response = await this.apiRequest<{ data: FrameioFile[] }>(
+      `/accounts/${accountId}/version_stacks/${versionStackId}/children`
+    );
+    return response.data || [];
+  }
+
+  async createVersionStack(accountId: string, folderId: string, data: {
+    name: string;
+    description?: string;
+  }): Promise<FrameioVersionStack> {
+    return this.apiRequest(`/accounts/${accountId}/folders/${folderId}/version_stacks`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
   }
 
   // Comment methods
