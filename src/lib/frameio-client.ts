@@ -249,6 +249,14 @@ export class FrameioClient {
     return response.data || [];
   }
 
+  // Comment methods (V4 API)
+  async getFileComments(accountId: string, fileId: string): Promise<FrameioComment[]> {
+    const response = await this.apiRequest<{ data: FrameioComment[] }>(
+      `/accounts/${accountId}/files/${fileId}/comments`
+    );
+    return response.data || [];
+  }
+
   async createVersionStack(accountId: string, folderId: string, data: {
     name: string;
     description?: string;

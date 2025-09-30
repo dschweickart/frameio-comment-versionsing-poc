@@ -180,16 +180,41 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
       
       // Check if this is a form submission (has data field)
       if (payload.data) {
-        console.log('📝 Form Data Received:', payload.data);
+        console.log('📝 Form Data Received:', JSON.stringify(payload.data, null, 2));
+        console.log('📋 Form fields:', Object.keys(payload.data));
         
         // Save processing job to database
         try {
           const accountId = payload.account?.id || payload.account_id;
+          const sourceFileId = payload.data.source_file_id as string;
+          
+          // Fetch comments from source file before creating job
+          const client = await FrameioClient.fromAccountId(accountId!);
+          if (!client) {
+            return {
+              title: "Authentication Error ❌",
+              description: "Could not authenticate with Frame.io. Please sign in again."
+            };
+          }
+          
+          console.log(`🔍 Fetching comments from source file: ${sourceFileId}`);
+          const sourceComments = await client.getFileComments(accountId!, sourceFileId);
+          
+          if (!sourceComments || sourceComments.length === 0) {
+            console.log('❌ No comments found on source file');
+            return {
+              title: "No Comments Found ❌",
+              description: "The source file has no comments to transfer. Please add comments to the source file first, then try again."
+            };
+          }
+          
+          console.log(`✅ Found ${sourceComments.length} comments on source file`);
+          
           const newJob: NewProcessingJob = {
             accountId,
             projectId: (payload.resource as { project_id?: string })?.project_id,
             versionStackId: payload.data.version_stack_id as string,
-            sourceFileId: payload.data.source_file_id as string,
+            sourceFileId,
             targetFileId: payload.resource?.id,
             interactionId: payload.interaction_id,
             userId: payload.user?.id,
@@ -200,16 +225,36 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
               sensitivity: payload.data.sensitivity,
               sourceFileName: payload.data.source_file_name,
               targetFileName: payload.data.target_file_name,
+              sourceCommentsCount: sourceComments.length,
+              sourceCommentIds: sourceComments.map(c => c.id),
               triggeredAt: new Date().toISOString(),
             }),
           };
           
           const [job] = await db.insert(processingJobs).values(newJob).returning();
-          console.log('✅ Processing job created:', job.id);
+          console.log(`✅ Processing job created: ${job.id} with ${sourceComments.length} comments to transfer`);
+          
+          // Look up actual file names for better success message
+          let sourceFileName = 'selected source';
+          let targetFileName = 'target file';
+          
+          try {
+            const client = await FrameioClient.fromAccountId(accountId!);
+            if (client && accountId && payload.resource?.id) {
+              const [sourceFile, targetFile] = await Promise.all([
+                client.getFile(accountId, payload.data.source_file_id as string),
+                client.getFile(accountId, payload.resource.id)
+              ]);
+              sourceFileName = sourceFile.name || sourceFileName;
+              targetFileName = targetFile.name || targetFileName;
+            }
+          } catch {
+            console.log('⚠️  Could not fetch file names for display, using defaults');
+          }
           
           return {
             title: "Success! 🎉",
-            description: `AI comment transfer initiated from "${payload.data.source_file_name}" to "${payload.data.target_file_name}". Processing will begin shortly...`
+            description: `AI comment transfer initiated! Transferring ${sourceComments.length} comment${sourceComments.length === 1 ? '' : 's'} from "${sourceFileName}" to "${targetFileName}". Processing will begin shortly...`
           };
         } catch (error) {
           console.error('❌ Failed to create processing job:', error);
