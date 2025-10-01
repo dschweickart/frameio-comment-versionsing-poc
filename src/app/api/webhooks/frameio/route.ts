@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { FrameioClient } from '@/lib/frameio-client';
 import { db, processingJobs, NewProcessingJob } from '@/lib/db';
+import { processJob } from '@/lib/video/process-job';
 
 interface FrameioWebhookPayload {
   event?: string;
@@ -59,10 +60,17 @@ function verifyWebhookSignature(payload: string, signature: string, secret: stri
       .update(payload)
       .digest('hex')}`;
     
-    return crypto.timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(expectedSignature)
-    );
+    // Convert to buffers
+    const sigBuffer = Buffer.from(signature);
+    const expectedBuffer = Buffer.from(expectedSignature);
+    
+    // timingSafeEqual requires buffers of equal length
+    if (sigBuffer.length !== expectedBuffer.length) {
+      console.warn(`Webhook signature length mismatch: got ${sigBuffer.length}, expected ${expectedBuffer.length}`);
+      return false;
+    }
+    
+    return crypto.timingSafeEqual(sigBuffer, expectedBuffer);
   } catch (error) {
     console.error('Webhook signature verification error:', error);
     return false;
@@ -233,6 +241,11 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
           
           const [job] = await db.insert(processingJobs).values(newJob).returning();
           console.log(`✅ Processing job created: ${job.id} with ${sourceComments.length} comments to transfer`);
+          
+          // Trigger job processing asynchronously (don't await - let it run in background)
+          processJob(job.id).catch((error) => {
+            console.error(`❌ Job ${job.id} processing failed:`, error);
+          });
           
           // Look up actual file names for better success message
           let sourceFileName = 'selected source';
