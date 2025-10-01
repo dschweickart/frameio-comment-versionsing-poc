@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { videos, frames, processingJobs } from '@/lib/db/schema';
+import { processingJobs } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { 
   extractFramesWithSeeking,

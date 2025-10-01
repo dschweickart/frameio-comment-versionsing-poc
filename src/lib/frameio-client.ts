@@ -292,11 +292,11 @@ export class FrameioClient {
   }): Promise<FrameioComment> {
     // V4 API: POST /v4/accounts/{accountId}/files/{fileId}/comments
     // V4 API requires the payload to be wrapped in a "data" object
-    const response = await this.apiRequest(`/accounts/${accountId}/files/${fileId}/comments`, {
+    const response = await this.apiRequest<{ data: FrameioComment }>(`/accounts/${accountId}/files/${fileId}/comments`, {
       method: 'POST',
       body: JSON.stringify({ data: commentData })
     });
-    return response.data || response;
+    return response.data;
   }
 
   async updateComment(commentId: string, commentData: {

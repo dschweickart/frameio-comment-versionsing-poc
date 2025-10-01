@@ -82,15 +82,12 @@ async function extractFramesBatch(
     // Extract all frames to stdout as JPEG stream
     const ffmpegCommand = `ffmpeg -i "${videoUrl}" -vf "select='${selectFilter}'" -vsync 0 -f image2pipe -c:v mjpeg -`;
     
-    const startTime = Date.now();
-    
     const jpegStream = execSync(ffmpegCommand, {
       encoding: 'buffer',
       maxBuffer: 50 * 1024 * 1024, // 50MB buffer
       stdio: ['pipe', 'pipe', 'pipe'], // stdin, stdout, stderr
     });
 
-    const duration = Date.now() - startTime;
     // Reduced logging - parent function will log progress
 
     // Parse JPEG stream into individual frames
@@ -249,7 +246,7 @@ export async function getVideoMetadata(videoUrl: string): Promise<{
  */
 export async function extractIFrames(
   videoUrl: string,
-  fps: number
+  _fps: number  // Parameter kept for API consistency, not used in I-frame extraction
 ): Promise<ExtractedFrame[]> {
   console.log(`🎬 Extracting I-frames (natural encoding keyframes)...`);
 
