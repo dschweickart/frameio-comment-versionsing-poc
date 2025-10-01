@@ -413,7 +413,7 @@ export class FrameioClient {
   }
 
   // Batch operations with rate limiting
-  async batchCreateComments(assetId: string, comments: Array<{
+  async batchCreateComments(accountId: string, fileId: string, comments: Array<{
     text: string;
     timestamp?: number;
     page?: number;
@@ -423,7 +423,7 @@ export class FrameioClient {
     for (const comment of comments) {
       try {
         const result = await this.withRateLimit(() => 
-          this.createComment(assetId, comment)
+          this.createComment(accountId, fileId, comment)
         );
         results.push(result);
         

@@ -246,6 +246,7 @@ export async function getVideoMetadata(videoUrl: string): Promise<{
  */
 export async function extractIFrames(
   videoUrl: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _fps: number  // Parameter kept for API consistency, not used in I-frame extraction
 ): Promise<ExtractedFrame[]> {
   console.log(`🎬 Extracting I-frames (natural encoding keyframes)...`);
