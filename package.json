@@ -16,6 +16,11 @@
     "db:setup": "node -e \"console.log('Run the SQL in src/lib/db/migrations/001_initial_setup.sql manually in your Neon database console')\"",
     "db:test": "npx tsx src/lib/db/test-connection.ts",
     "test:version-stack": "npx tsx scripts/test-version-stack-hardcoded.ts",
+    "test:download": "npx tsx scripts/test-video-download-local.ts",
+    "test:frames": "npx tsx scripts/test-frame-extraction.ts",
+    "test:embeddings": "npx tsx --env-file=.env.local scripts/test-embeddings.ts",
+    "test:hash": "npx tsx --env-file=.env.local scripts/test-perceptual-hash.ts",
+    "test:e2e": "npx tsx --env-file=.env.local scripts/test-end-to-end.ts",
     "postbuild": "node scripts/setup-database.js"
   },
   "dependencies": {
@@ -28,6 +33,7 @@
     "next": "15.5.4",
     "react": "19.1.0",
     "react-dom": "19.1.0",
+    "sharp": "^0.34.4",
     "uuid": "^13.0.0"
   },
   "devDependencies": {

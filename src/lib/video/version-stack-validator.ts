@@ -72,7 +72,7 @@ export async function validateVersionStack(
           file
         };
       }
-    } catch (parentError) {
+    } catch {
       // Parent might not be a version stack, try getting it as a file
       const parentFile = await client.getFile(accountId, file.parent_id);
       

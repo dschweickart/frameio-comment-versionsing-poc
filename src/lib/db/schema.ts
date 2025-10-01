@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, integer, decimal, text, timestamp, vector } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, integer, decimal, text, timestamp } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 // Videos table - stores Frame.io video metadata
@@ -13,14 +13,14 @@ export const videos = pgTable('videos', {
   updatedAt: timestamp('updated_at').defaultNow(),
 });
 
-// Frames table - stores extracted video frames with embeddings
+// Frames table - stores extracted video frames with perceptual hashes
 export const frames = pgTable('frames', {
   id: uuid('id').primaryKey().defaultRandom(),
   videoId: uuid('video_id').references(() => videos.id).notNull(),
   timestampSeconds: decimal('timestamp_seconds', { precision: 10, scale: 3 }).notNull(),
   frameNumber: integer('frame_number').notNull(),
-  // Vector embedding - adjust dimension based on model (1536 for OpenAI text-embedding-3-small)
-  embedding: vector('embedding', { dimensions: 1536 }),
+  // Perceptual hash (dHash) - 16 character hex string (64-bit hash)
+  hash: varchar('hash', { length: 16 }).notNull(),
   createdAt: timestamp('created_at').defaultNow(),
 });
 

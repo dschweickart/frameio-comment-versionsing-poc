@@ -49,6 +49,14 @@ export interface FrameioFile {
   media_type?: string;
   media_links?: {
     video_h264_720?: string;
+    high_quality?: {
+      download_url?: string;
+      [key: string]: unknown;
+    };
+    efficient?: {
+      download_url?: string;
+      [key: string]: unknown;
+    };
     [key: string]: unknown;
   };
   fps?: number;
@@ -180,6 +188,10 @@ export class FrameioClient {
       try {
         const errorData = JSON.parse(errorText);
         errorMessage = errorData.message || errorData.error || `HTTP ${response.status}`;
+        // Log full error details for debugging
+        if (process.env.NODE_ENV !== 'production') {
+          console.error('Frame.io API Error:', JSON.stringify(errorData, null, 2));
+        }
       } catch {
         errorMessage = `HTTP ${response.status}: ${response.statusText}`;
       }
@@ -272,16 +284,19 @@ export class FrameioClient {
     return this.apiRequest(`/assets/${assetId}/comments`);
   }
 
-  async createComment(assetId: string, commentData: {
+  async createComment(accountId: string, fileId: string, commentData: {
     text: string;
     timestamp?: number;
     page?: number;
     annotation?: unknown;
   }): Promise<FrameioComment> {
-    return this.apiRequest(`/assets/${assetId}/comments`, {
+    // V4 API: POST /v4/accounts/{accountId}/files/{fileId}/comments
+    // V4 API requires the payload to be wrapped in a "data" object
+    const response = await this.apiRequest(`/accounts/${accountId}/files/${fileId}/comments`, {
       method: 'POST',
-      body: JSON.stringify(commentData)
+      body: JSON.stringify({ data: commentData })
     });
+    return response.data || response;
   }
 
   async updateComment(commentId: string, commentData: {

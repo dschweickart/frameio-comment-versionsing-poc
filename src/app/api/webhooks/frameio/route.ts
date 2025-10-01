@@ -82,7 +82,16 @@ export async function POST(request: NextRequest) {
     // Get request body and headers
     const body = await request.text();
     const signature = request.headers.get('x-frameio-signature') || '';
-    const webhookSecret = process.env.FRAMEIO_WEBHOOK_SECRET || '';
+    const webhookSecret = process.env.FRAMEIO_WEBHOOK_SECRET || process.env.ACTION_SECRET || '';
+    
+    // Debug logging for signature verification
+    console.log('🔐 Webhook signature debug:', {
+      hasSignature: !!signature,
+      signatureLength: signature.length,
+      hasSecret: !!webhookSecret,
+      secretLength: webhookSecret.length,
+      signaturePreview: signature.substring(0, 20) + '...',
+    });
     
     // Verify webhook signature if secret is configured
     const isVerified = webhookSecret ? verifyWebhookSignature(body, signature, webhookSecret) : true;
