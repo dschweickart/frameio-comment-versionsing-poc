@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getSession } from '@/lib/auth/crypto';
+import { getSession, setSession } from '@/lib/auth/crypto';
 import { refreshAccessToken } from '@/lib/auth/oauth';
 
 export async function GET() {
@@ -19,10 +19,13 @@ export async function GET() {
 
     if (shouldRefresh) {
       try {
+        console.log('Refreshing access token...');
         const newTokens = await refreshAccessToken(session.tokens.refresh_token);
         // Update session with new tokens
         session.tokens = newTokens;
-        // Note: In a real app, you'd want to update the session cookie here
+        // Save updated session to cookie
+        await setSession(session);
+        console.log('Token refreshed and session updated');
       } catch (error) {
         console.error('Token refresh failed:', error);
         return NextResponse.json(
