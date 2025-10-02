@@ -363,9 +363,8 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
       // Check if this is the initial trigger (no data) - show simple confirmation
       if (!payload.data) {
         return {
-          title: "Match comments",
-          description: "Apply comments from prior version using image matching",
-          fields: []
+          title: "Match Comments",
+          description: "Apply comments from prior version using image matching?"
         };
       }
       

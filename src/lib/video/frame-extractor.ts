@@ -1,4 +1,11 @@
 import { execSync } from 'child_process';
+import ffmpegPath from 'ffmpeg-static';
+// @ts-expect-error - ffprobe-static doesn't have TypeScript types
+import ffprobePath from 'ffprobe-static';
+
+// Get static binary paths (fallback to system binaries if imports fail)
+const FFMPEG_BIN = ffmpegPath || 'ffmpeg';
+const FFPROBE_BIN = (ffprobePath?.path || ffprobePath) as string;
 
 export interface ExtractedFrame {
   frameNumber?: number;  // For source frames (Frame.io uses frame numbers)
@@ -80,7 +87,7 @@ async function extractFramesBatch(
 
   try {
     // Extract all frames to stdout as JPEG stream
-    const ffmpegCommand = `ffmpeg -i "${videoUrl}" -vf "select='${selectFilter}'" -vsync 0 -f image2pipe -c:v mjpeg -`;
+    const ffmpegCommand = `"${FFMPEG_BIN}" -i "${videoUrl}" -vf "select='${selectFilter}'" -vsync 0 -f image2pipe -c:v mjpeg -`;
     
     const jpegStream = execSync(ffmpegCommand, {
       encoding: 'buffer',
@@ -120,7 +127,7 @@ export async function extractKeyframes(
   try {
     // Extract frames at regular intervals
     const selectFilter = `not(mod(n\\,${intervalFrames}))`;
-    const ffmpegCommand = `ffmpeg -i "${videoUrl}" -vf "select='${selectFilter}'" -vsync 0 -f image2pipe -c:v mjpeg -`;
+    const ffmpegCommand = `"${FFMPEG_BIN}" -i "${videoUrl}" -vf "select='${selectFilter}'" -vsync 0 -f image2pipe -c:v mjpeg -`;
     
     console.log('📹 Running FFmpeg with interval filter...');
     const startTime = Date.now();
@@ -202,7 +209,7 @@ export async function getVideoMetadata(videoUrl: string): Promise<{
   height: number;
 }> {
   try {
-    const ffprobeCommand = `ffprobe -v quiet -print_format json -show_format -show_streams "${videoUrl}"`;
+    const ffprobeCommand = `"${FFPROBE_BIN}" -v quiet -print_format json -show_format -show_streams "${videoUrl}"`;
     
     const output = execSync(ffprobeCommand, { encoding: 'utf8' });
     const data = JSON.parse(output);
@@ -254,7 +261,7 @@ export async function extractIFrames(
   try {
     // Extract only I-frames (pict_type=I means intra-coded frame), downscaled for faster hashing
     const selectFilter = `eq(pict_type\\,I)`;
-    const ffmpegCommand = `ffmpeg -i "${videoUrl}" -vf "scale=320:-1,select='${selectFilter}'" -vsync 0 -f image2pipe -c:v mjpeg -q:v 5 -`;
+    const ffmpegCommand = `"${FFMPEG_BIN}" -i "${videoUrl}" -vf "scale=320:-1,select='${selectFilter}'" -vsync 0 -f image2pipe -c:v mjpeg -q:v 5 -`;
     
     console.log(`📹 Running FFmpeg I-frame extraction...`);
     const startTime = Date.now();
@@ -301,7 +308,7 @@ export async function extractFramesInTimeRange(
   try {
     // Seek to start time, then extract all frames in the range (downscaled for faster hashing)
     // Use yuvj420p pixel format for proper JPEG color space
-    const ffmpegCommand = `ffmpeg -ss ${startTime} -i "${videoUrl}" -vf "scale=320:-1,select='gte(t,${startTime})*lte(t,${endTime})'" -vsync 0 -pix_fmt yuvj420p -f image2pipe -c:v mjpeg -q:v 5 -`;
+    const ffmpegCommand = `"${FFMPEG_BIN}" -ss ${startTime} -i "${videoUrl}" -vf "scale=320:-1,select='gte(t,${startTime})*lte(t,${endTime})'" -vsync 0 -pix_fmt yuvj420p -f image2pipe -c:v mjpeg -q:v 5 -`;
     
     const jpegStream = execSync(ffmpegCommand, {
       encoding: 'buffer',
@@ -354,7 +361,7 @@ export async function extractFramesWithSeeking(
       
       try {
         // Seek to timestamp and extract 1 frame (downscaled for faster hashing)
-        const ffmpegCommand = `ffmpeg -ss ${timestamp} -i "${videoUrl}" -vf "scale=320:-1" -frames:v 1 -f image2pipe -c:v mjpeg -q:v 5 -`;
+        const ffmpegCommand = `"${FFMPEG_BIN}" -ss ${timestamp} -i "${videoUrl}" -vf "scale=320:-1" -frames:v 1 -f image2pipe -c:v mjpeg -q:v 5 -`;
         
         const jpegBuffer = execSync(ffmpegCommand, {
           encoding: 'buffer',
