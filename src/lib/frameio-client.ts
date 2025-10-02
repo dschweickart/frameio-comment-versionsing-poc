@@ -248,6 +248,11 @@ export class FrameioClient {
     return response.data;
   }
 
+  async getFileWithMediaLinks(accountId: string, fileId: string): Promise<FrameioFile> {
+    const response = await this.apiRequest<{ data: FrameioFile }>(`/accounts/${accountId}/files/${fileId}?include=media_links.efficient`);
+    return response.data;
+  }
+
   // Version Stack methods (V4 API - Stable)
   async getVersionStack(accountId: string, versionStackId: string): Promise<FrameioVersionStack> {
     const response = await this.apiRequest<{ data: FrameioVersionStack }>(`/accounts/${accountId}/version_stacks/${versionStackId}`);

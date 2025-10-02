@@ -68,9 +68,7 @@ export class FrameProcessor {
     console.log('\n🎬 Preparing target video (one-time setup)...');
     
     await this.updateJobProgress(jobId, 'processing', 0.1, 'Fetching target video...');
-    const targetFileUrl = `/accounts/${accountId}/files/${targetFileId}?include=media_links.efficient`;
-    const targetFileResponse = await this.client.apiRequest(targetFileUrl);
-    const targetFile = targetFileResponse.data || targetFileResponse;
+    const targetFile = await this.client.getFileWithMediaLinks(accountId, targetFileId);
     const targetVideoUrl = targetFile.media_links?.efficient?.download_url;
     
     if (!targetVideoUrl) {
@@ -127,11 +125,45 @@ export class FrameProcessor {
     console.log(`  ✅ Generated ${sourceHashes.length} source hashes`);
 
     // Coarse matching against target keyframes
-    const coarseMatches = this.matchSourceToTargetWithComments(
-      sourceHashes,
-      comments,
-      targetContext.keyframeHashes
-    );
+    // Match each source hash with its corresponding comment
+    const coarseMatches: Array<{
+      sourceComment: FrameioComment;
+      targetTimestamp: number;
+      hammingDistance: number;
+      similarity: number;
+    }> = [];
+
+    for (let i = 0; i < sourceHashes.length; i++) {
+      const sourceHash = sourceHashes[i];
+      const comment = comments[i];
+      
+      let bestMatch = {
+        targetTimestamp: 0,
+        distance: Infinity,
+        similarity: 0,
+      };
+
+      for (const targetHash of targetContext.keyframeHashes) {
+        const distance = hammingDistance(sourceHash.hash, targetHash.hash);
+        const similarity = hashSimilarity(sourceHash.hash, targetHash.hash);
+
+        if (distance < bestMatch.distance) {
+          bestMatch = {
+            targetTimestamp: targetHash.timestamp!,
+            distance,
+            similarity,
+          };
+        }
+      }
+
+      coarseMatches.push({
+        sourceComment: comment,
+        targetTimestamp: bestMatch.targetTimestamp,
+        hammingDistance: bestMatch.distance,
+        similarity: bestMatch.similarity,
+      });
+    }
+    
     console.log(`  ✅ Found ${coarseMatches.length} coarse matches`);
 
     // Refinement
@@ -205,9 +237,7 @@ export class FrameProcessor {
       // ========== PHASE 1: SOURCE VIDEO PROCESSING (Frame-based with -ss seeking) ==========
       
       await this.updateJobProgress(jobId, 'processing', 0.1, 'Fetching source video metadata...');
-      const sourceFileUrl = `/accounts/${accountId}/files/${sourceFileId}?include=media_links.efficient`;
-      const sourceFileResponse = await this.client.apiRequest(sourceFileUrl);
-      const sourceFile = sourceFileResponse.data || sourceFileResponse;
+      const sourceFile = await this.client.getFileWithMediaLinks(accountId, sourceFileId);
       const sourceComments = await this.client.getFileComments(accountId, sourceFileId);
 
       if (!sourceComments || sourceComments.length === 0) {
@@ -247,9 +277,7 @@ export class FrameProcessor {
       // ========== PHASE 2: TARGET VIDEO PROCESSING (I-frame extraction) ==========
       
       await this.updateJobProgress(jobId, 'processing', 0.6, 'Processing target video...');
-      const targetFileUrl = `/accounts/${accountId}/files/${targetFileId}?include=media_links.efficient`;
-      const targetFileResponse = await this.client.apiRequest(targetFileUrl);
-      const targetFile = targetFileResponse.data || targetFileResponse;
+      const targetFile = await this.client.getFileWithMediaLinks(accountId, targetFileId);
       const targetVideoUrl = targetFile.media_links?.efficient?.download_url;
       
       if (!targetVideoUrl) {
@@ -420,6 +448,7 @@ export class FrameProcessor {
         owner: { id: '', name: '' },
         page: undefined,
         annotation: undefined,
+        asset_id: '', // Will be filled in later
       };
 
       matches.push({
@@ -448,7 +477,6 @@ export class FrameProcessor {
         status,
         progress: progress.toString(),
         message,
-        updatedAt: new Date(),
       })
       .where(eq(processingJobs.id, jobId));
 
