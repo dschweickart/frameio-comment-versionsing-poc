@@ -364,7 +364,8 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
       if (!payload.data) {
         return {
           title: "Match Comments",
-          description: "Apply comments from prior version using image matching?"
+          description: "Apply comments from prior version using image matching?",
+          fields: []
         };
       }
       
