@@ -172,40 +172,59 @@ export class FrameioClient {
 
     const url = `${process.env.FRAMEIO_API_BASE_URL}${endpoint}`;
     
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Authorization': `Bearer ${this.accessToken}`,
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      let errorMessage: string;
+    // Add timeout to prevent hanging (10 seconds)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    try {
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          'Authorization': `Bearer ${this.accessToken}`,
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+        signal: controller.signal,
+      });
       
-      try {
-        const errorData = JSON.parse(errorText);
-        errorMessage = errorData.message || errorData.error || `HTTP ${response.status}`;
-        // Log full error details for debugging
-        if (process.env.NODE_ENV !== 'production') {
-          console.error('Frame.io API Error:', JSON.stringify(errorData, null, 2));
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorMessage: string;
+        
+        try {
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.message || errorData.error || `HTTP ${response.status}`;
+          // Log full error details for debugging
+          if (process.env.NODE_ENV !== 'production') {
+            console.error('Frame.io API Error:', JSON.stringify(errorData, null, 2));
+          }
+        } catch {
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
         }
-      } catch {
-        errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+
+        throw new Error(`Frame.io API error: ${errorMessage}`);
       }
 
-      throw new Error(`Frame.io API error: ${errorMessage}`);
-    }
+      // Handle empty responses
+      const contentType = response.headers.get('content-type');
+      if (!contentType?.includes('application/json')) {
+        return {} as T;
+      }
 
-    // Handle empty responses
-    const contentType = response.headers.get('content-type');
-    if (!contentType?.includes('application/json')) {
-      return {} as T;
+      return response.json();
+    } catch (error) {
+      clearTimeout(timeoutId);
+      
+      // Handle timeout errors
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('Frame.io API request timed out after 10 seconds');
+      }
+      
+      // Re-throw other errors
+      throw error;
     }
-
-    return response.json();
   }
 
   // User and Account methods

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession, setSession } from '@/lib/auth/crypto';
 import { refreshAccessToken } from '@/lib/auth/oauth';
+import { saveUserTokens } from '@/lib/auth/token-storage';
 
 export async function GET() {
   try {
@@ -21,11 +22,26 @@ export async function GET() {
       try {
         console.log('Refreshing access token...');
         const newTokens = await refreshAccessToken(session.tokens.refresh_token);
+        
         // Update session with new tokens
         session.tokens = newTokens;
-        // Save updated session to cookie
         await setSession(session);
-        console.log('Token refreshed and session updated');
+        
+        // Also update database tokens for webhook/serverside access
+        try {
+          await saveUserTokens(
+            session.user.id,
+            newTokens,
+            {
+              email: session.user.email,
+              name: session.user.name,
+            }
+          );
+          console.log('Token refreshed and saved to both session and database');
+        } catch (dbError) {
+          console.error('Failed to update database tokens (session still updated):', dbError);
+          // Continue - session refresh still succeeded
+        }
       } catch (error) {
         console.error('Token refresh failed:', error);
         return NextResponse.json(

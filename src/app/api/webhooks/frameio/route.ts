@@ -171,19 +171,17 @@ export async function POST(request: NextRequest) {
     
     console.log('🎯 FRAME.IO WEBHOOK RECEIVED:', logData);
     
-    // Also log to our debug endpoint
-    try {
-      await fetch(`${request.nextUrl.origin}/api/debug/logs`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: '🎯 FRAME.IO WEBHOOK RECEIVED',
-          data: logData
-        })
-      });
-    } catch {
+    // Also log to our debug endpoint (fire-and-forget, don't block webhook response)
+    fetch(`${request.nextUrl.origin}/api/debug/logs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: '🎯 FRAME.IO WEBHOOK RECEIVED',
+        data: logData
+      })
+    }).catch(() => {
       // Silent fail for debug logging
-    }
+    });
     
     // Handle different webhook events
     const response = await handleWebhookEvent(payload);
@@ -248,7 +246,13 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
         console.log('📝 Form Data Received:', JSON.stringify(payload.data, null, 2));
         console.log('📋 Form fields:', Object.keys(payload.data));
         
-        // Save processing job to database
+        // If this is just the confirmation step, proceed to version selection
+        if (payload.data.confirm && !payload.data.source_file_id) {
+          console.log('✅ User confirmed, proceeding to version selection...');
+          // Fall through to version selection logic below
+        } else if (payload.data.source_file_id) {
+          // This is the final submission with source file selected
+          // Save processing job to database
         try {
           const accountId = payload.account?.id || payload.account_id;
           const sourceFileId = payload.data.source_file_id as string;
@@ -333,9 +337,29 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
             description: `Failed to initiate processing: ${error instanceof Error ? error.message : 'Unknown error'}`
           };
         }
+        }
       }
       
-      // Initial trigger - validate version stack and return dynamic form
+      // Check if this is the initial trigger (no data) - show simple confirmation
+      if (!payload.data) {
+        return {
+          title: "Apply comments from prior version?",
+          description: "Continue to select version",
+          fields: [
+            {
+              type: "select",
+              label: "Ready to proceed?",
+              name: "confirm",
+              value: "yes",
+              options: [
+                { name: "OK", value: "yes" }
+              ]
+            }
+          ]
+        };
+      }
+      
+      // User confirmed - validate version stack and return version selection form
       try {
         const accountId = payload.account?.id || payload.account_id;
         const fileId = payload.resource?.id;
@@ -370,7 +394,9 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
         console.log('✅ Client created successfully from stored tokens');
         
         // Get file details
+        console.log('⏱️  Fetching file details...');
         const file = await client.getFile(accountId, fileId);
+        console.log(`✅ File fetched: ${file.name}`);
         
         if (!file.parent_id) {
           return {
@@ -380,7 +406,9 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
         }
         
         // List version stack children (siblings)
+        console.log('⏱️  Fetching version stack children...');
         const allVersions = await client.listVersionStackChildren(accountId, file.parent_id);
+        console.log(`✅ Found ${allVersions.length} versions in stack`);
         
         // Filter out the target file to get source options
         const sourceFiles = allVersions.filter(v => v.id !== fileId && v.status === 'transcoded');

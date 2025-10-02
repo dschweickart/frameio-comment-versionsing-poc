@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession, setSession } from '@/lib/auth/crypto';
 import { refreshAccessToken, handleAuthError } from '@/lib/auth/oauth';
+import { saveUserTokens } from '@/lib/auth/token-storage';
 
 export async function POST() {
   try {
@@ -23,6 +24,22 @@ export async function POST() {
     };
 
     await setSession(updatedSession);
+
+    // Also update database tokens for webhook/serverside access
+    try {
+      await saveUserTokens(
+        session.user.id,
+        newTokens,
+        {
+          email: session.user.email,
+          name: session.user.name,
+        }
+      );
+      console.log('Token refreshed and saved to both session and database');
+    } catch (dbError) {
+      console.error('Failed to update database tokens (session still updated):', dbError);
+      // Continue - session refresh still succeeded
+    }
 
     return NextResponse.json({
       access_token: newTokens.access_token,
