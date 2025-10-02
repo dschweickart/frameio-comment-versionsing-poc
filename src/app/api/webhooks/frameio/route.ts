@@ -170,7 +170,6 @@ export async function POST(request: NextRequest) {
     };
     
     console.log('🎯 FRAME.IO WEBHOOK RECEIVED:', logData);
-    console.error('🎯 WEBHOOK DEBUG (using error level):', logData); // Try error level
     
     // Also log to our debug endpoint
     try {
@@ -192,7 +191,6 @@ export async function POST(request: NextRequest) {
     // If handler returns a response (form or message), send it back
     if (response) {
       console.log('📤 Sending response to Frame.io:', response);
-      console.error('📤 RESPONSE DEBUG:', response); // Try error level
       
       // Add debug info to response
       return NextResponse.json({
