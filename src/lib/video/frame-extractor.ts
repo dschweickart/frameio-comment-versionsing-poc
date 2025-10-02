@@ -7,6 +7,14 @@ import ffprobePath from 'ffprobe-static';
 const FFMPEG_BIN = ffmpegPath || 'ffmpeg';
 const FFPROBE_BIN = (ffprobePath?.path || ffprobePath) as string;
 
+// Debug: Log the resolved paths
+console.log('🔍 FFmpeg binary paths:', {
+  ffmpeg: FFMPEG_BIN,
+  ffprobe: FFPROBE_BIN,
+  ffmpegRaw: ffmpegPath,
+  ffprobeRaw: ffprobePath
+});
+
 export interface ExtractedFrame {
   frameNumber?: number;  // For source frames (Frame.io uses frame numbers)
   timestamp?: number;    // For target frames (in seconds, for time-based matching)
