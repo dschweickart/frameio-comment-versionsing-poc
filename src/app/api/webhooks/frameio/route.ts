@@ -411,11 +411,6 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
         }
         
         // Build form with dynamic source file options
-        // Sort by created date and add version numbers
-        const sortedSourceFiles = sourceFiles.sort((a, b) => 
-          new Date(a.inserted_at).getTime() - new Date(b.inserted_at).getTime()
-        );
-        
         return {
           title: `Apply comments to "${file.name}"`,
           description: "",
@@ -424,8 +419,8 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
               type: "select",
               label: "Select source",
               name: "source_file_id",
-              value: sortedSourceFiles[0].id,
-              options: sortedSourceFiles.map((sf, index) => ({
+              value: sourceFiles[0].id,
+              options: sourceFiles.map((sf, index) => ({
                 name: `v${index + 1} - ${sf.name}`,
                 value: sf.id
               }))
