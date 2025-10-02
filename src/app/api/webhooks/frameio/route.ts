@@ -49,6 +49,26 @@ interface FormField {
 }
 
 /**
+ * Truncate filename in the middle for display
+ * @param filename - Full filename
+ * @param maxLength - Maximum length (default: 40)
+ * @returns Truncated filename with ellipsis in the middle
+ */
+function truncateMiddle(filename: string, maxLength: number = 40): string {
+  if (filename.length <= maxLength) return filename;
+  
+  const extensionMatch = filename.match(/\.[^.]+$/);
+  const extension = extensionMatch ? extensionMatch[0] : '';
+  const nameWithoutExt = extension ? filename.slice(0, -extension.length) : filename;
+  
+  const charsToShow = maxLength - extension.length - 3; // -3 for "..."
+  const startChars = Math.ceil(charsToShow / 2);
+  const endChars = Math.floor(charsToShow / 2);
+  
+  return nameWithoutExt.slice(0, startChars) + '...' + nameWithoutExt.slice(-endChars) + extension;
+}
+
+/**
  * Verify Frame.io Custom Action webhook signature
  * 
  * Per Frame.io docs: https://developer.adobe.com/frameio/guides/Custom%20Actions/Configuring%20Actions/
@@ -344,15 +364,8 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
       if (!payload.data) {
         return {
           title: "Match comments",
-          description: "Apply comments from prior version using image matching. Continue?",
-          fields: [
-            {
-              type: "boolean",
-              label: " ",
-              name: "confirmed",
-              value: "true"
-            }
-          ]
+          description: "Apply comments from prior version using image matching",
+          fields: []
         };
       }
       
@@ -428,7 +441,7 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
               name: "source_file_id",
               value: sourceFiles[0].id,
               options: sourceFiles.map((sf, index) => ({
-                name: `v${index + 1} - ${sf.name}`,
+                name: `v${index + 1} - ${truncateMiddle(sf.name)}`,
                 value: sf.id
               }))
             },
