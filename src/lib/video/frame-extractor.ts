@@ -1,45 +1,45 @@
 import { execSync } from 'child_process';
 import path from 'path';
 import { existsSync } from 'fs';
-import ffmpegPath from 'ffmpeg-static';
-// @ts-expect-error - ffprobe-static doesn't have TypeScript types
-import ffprobePath from 'ffprobe-static';
 
-// Helper to fix /ROOT/ placeholder paths
-function resolveBinaryPath(binaryPath: string | null | undefined): string | null {
-  if (!binaryPath) return null;
-  
-  // If path contains /ROOT/, replace it with actual working directory
-  if (binaryPath.includes('/ROOT/')) {
-    const fixed = binaryPath.replace('/ROOT/', `${process.cwd()}/`);
-    console.log(`🔧 Fixed path: ${binaryPath} -> ${fixed}`);
-    
-    // Verify the file exists
-    if (existsSync(fixed)) {
-      console.log(`✅ Binary exists at: ${fixed}`);
-      return fixed;
-    } else {
-      console.warn(`⚠️ Binary not found at: ${fixed}`);
-      return null;
-    }
+// Helper to find FFmpeg/ffprobe binaries
+// Priority: 1. System binaries (/usr/bin) 2. npm static binaries 3. PATH
+function findBinary(name: 'ffmpeg' | 'ffprobe'): string {
+  // 1. Check system binaries (Railway with RAILPACK_PACKAGES)
+  const systemPath = `/usr/bin/${name}`;
+  if (existsSync(systemPath)) {
+    console.log(`✅ Using system ${name}: ${systemPath}`);
+    return systemPath;
   }
-  
-  return binaryPath;
+
+  // 2. Try npm static binaries (for local development)
+  try {
+    if (name === 'ffmpeg') {
+      const ffmpegPath = require('ffmpeg-static');
+      if (ffmpegPath && existsSync(ffmpegPath)) {
+        console.log(`✅ Using static ${name}: ${ffmpegPath}`);
+        return ffmpegPath;
+      }
+    } else {
+      // @ts-expect-error - ffprobe-static doesn't have TypeScript types
+      const ffprobePath = require('ffprobe-static');
+      const path = ffprobePath?.path || ffprobePath;
+      if (path && existsSync(path)) {
+        console.log(`✅ Using static ${name}: ${path}`);
+        return path;
+      }
+    }
+  } catch (error) {
+    console.warn(`⚠️ Static ${name} not available:`, error);
+  }
+
+  // 3. Fall back to PATH
+  console.log(`⚠️ Using ${name} from PATH`);
+  return name;
 }
 
-// Get static binary paths (fallback to system binaries if resolution fails)
-const resolvedFFmpeg = resolveBinaryPath(ffmpegPath);
-const resolvedFFprobe = resolveBinaryPath(ffprobePath?.path || ffprobePath);
-
-const FFMPEG_BIN = resolvedFFmpeg || 'ffmpeg';
-const FFPROBE_BIN = resolvedFFprobe || 'ffprobe';
-
-// Debug: Log the resolved paths
-console.log('🔍 FFmpeg binary paths:', {
-  ffmpeg: FFMPEG_BIN,
-  ffprobe: FFPROBE_BIN,
-  cwd: process.cwd()
-});
+const FFMPEG_BIN = findBinary('ffmpeg');
+const FFPROBE_BIN = findBinary('ffprobe');
 
 export interface ExtractedFrame {
   frameNumber?: number;  // For source frames (Frame.io uses frame numbers)
