@@ -291,7 +291,8 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
             userEmail: payload.user?.email,
             status: 'pending',
             metadata: JSON.stringify({
-              sensitivity: payload.data.sensitivity,
+              sensitivity: payload.data.fuzzy_matches === 'true' ? 'low' : 'medium',
+              fuzzyMatches: payload.data.fuzzy_matches === 'true',
               sourceFileName: payload.data.source_file_name,
               targetFileName: payload.data.target_file_name,
               sourceCommentsCount: sourceComments.length,
@@ -343,12 +344,12 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
       // Check if this is the initial trigger (no data) - show simple confirmation
       if (!payload.data) {
         return {
-          title: "Apply comments from prior version?",
-          description: "Continue to select version",
+          title: "Apply comments from a previous version?",
+          description: "",
           fields: [
             {
               type: "select",
-              label: "Ready to proceed?",
+              label: " ",
               name: "confirm",
               value: "yes",
               options: [
@@ -422,22 +423,16 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
         
         // Build form with dynamic source file options
         return {
-          title: "AI Comment Transfer",
-          description: `Transfer comments to "${file.name}" from another version in the stack.`,
+          title: `Apply comments to "${file.name}"`,
+          description: "",
           fields: [
             {
-              type: "text",
-              label: "Target File (current)",
-              name: "target_file_name",
-              value: file.name
-            },
-            {
               type: "select",
-              label: "Source File (copy comments from)",
+              label: "Select source",
               name: "source_file_id",
               value: sourceFiles[0].id,
               options: sourceFiles.map(sf => ({
-                name: `${sf.name} (${((sf.file_size || 0) / 1024 / 1024).toFixed(1)} MB)`,
+                name: sf.name,
                 value: sf.id
               }))
             },
@@ -454,15 +449,16 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
               value: sourceFiles[0].name
             },
             {
-              type: "select",
-              label: "Matching Sensitivity",
-              name: "sensitivity",
-              value: "medium",
-              options: [
-                { name: "High (Strict matching)", value: "high" },
-                { name: "Medium (Balanced)", value: "medium" },
-                { name: "Low (Flexible matching)", value: "low" }
-              ]
+              type: "text",
+              label: "Target File Name (hidden)",
+              name: "target_file_name",
+              value: file.name
+            },
+            {
+              type: "boolean",
+              label: "Allow fuzzy matches",
+              name: "fuzzy_matches",
+              value: "false"
             }
           ]
         };
