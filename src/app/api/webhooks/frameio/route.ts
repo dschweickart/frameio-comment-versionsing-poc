@@ -360,16 +360,7 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
         }
       }
       
-      // Check if this is the initial trigger (no data) - show simple confirmation
-      if (!payload.data) {
-        return {
-          title: "Match Comments",
-          description: "Apply comments from prior version using image matching?",
-          fields: []
-        };
-      }
-      
-      // User confirmed - validate version stack and return version selection form
+      // Fetch version stack and return version selection form immediately
       try {
         const accountId = payload.account?.id || payload.account_id;
         const fileId = payload.resource?.id;
@@ -379,7 +370,8 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
           fileId,
           hasAccount: !!payload.account,
           accountIdDirect: payload.account_id,
-          accountObject: payload.account
+          accountObject: payload.account,
+          hasData: !!payload.data
         });
         
         if (!accountId || !fileId) {
@@ -389,8 +381,53 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
           };
         }
         
-        // Create Frame.io client from stored tokens
-        console.log(`🔑 Looking for tokens with account_id: ${accountId}`);
+        // If form was already submitted, process the job
+        if (payload.data?.source_file_id) {
+          console.log('📝 Form submitted, processing job...');
+          // Job processing logic will be here
+          const sourceFileId = payload.data.source_file_id as string;
+          const fuzzyMatches = payload.data.fuzzy_matches === 'true' || payload.data.fuzzy_matches === true;
+          
+          console.log(`🚀 Starting job: source=${sourceFileId}, target=${fileId}, fuzzy=${fuzzyMatches}`);
+          
+          // Create Frame.io client from stored tokens
+          const client = await FrameioClient.fromAccountId(accountId);
+          if (!client) {
+            return {
+              title: "Authentication Required ❌",
+              description: "Please sign in to the application first."
+            };
+          }
+          
+          // Create processing job
+          const jobData: NewProcessingJob = {
+            accountId,
+            sourceFileId,
+            targetFileId: fileId,
+            status: 'pending',
+            metadata: JSON.stringify({
+              fuzzyMatches,
+              initiatedBy: payload.user?.id,
+              interactionId: payload.interaction_id
+            })
+          };
+          
+          const [job] = await db.insert(processingJobs).values(jobData).returning();
+          console.log(`✅ Job created: ${job.id}`);
+          
+          // Start processing asynchronously (don't await)
+          processJob(job.id).catch(err => {
+            console.error(`❌ Job ${job.id} failed:`, err);
+          });
+          
+          return {
+            title: "Processing Started ✓",
+            description: "Matching comment job submitted. This may take a few minutes for longer videos."
+          };
+        }
+        
+        // Initial request - fetch version stack and show form
+        console.log('🔑 Looking for tokens with account_id:', accountId);
         const client = await FrameioClient.fromAccountId(accountId);
         
         if (!client) {
@@ -455,10 +492,10 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
         };
         
       } catch (error) {
-        console.error('❌ Version stack validation failed:', error);
+        console.error('❌ Custom action failed:', error);
         return {
           title: "Error ❌",
-          description: `Failed to validate version stack: ${error instanceof Error ? error.message : 'Unknown error'}`
+          description: `Failed to load version stack: ${error instanceof Error ? error.message : 'Unknown error'}`
         };
       }
       
