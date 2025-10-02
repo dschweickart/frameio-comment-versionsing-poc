@@ -2,7 +2,12 @@
 nixPkgs = ['nodejs', 'ffmpeg-full']
 
 [phases.build]
-cmds = ['npm ci', 'npm run build']
+cmds = [
+  'which ffmpeg',
+  'which ffprobe',
+  'npm ci',
+  'npm run build'
+]
 
 [start]
 cmd = 'npm start'
