@@ -1,18 +1,30 @@
 import { execSync } from 'child_process';
+import path from 'path';
 import ffmpegPath from 'ffmpeg-static';
-// @ts-expect-error - ffprobe-static doesn't have TypeScript types
-import ffprobePath from 'ffprobe-static';
+
+// Get ffprobe binary path using require.resolve to get actual installed location
+let FFPROBE_BIN: string;
+try {
+  // Get the package root directory
+  const ffprobePackagePath = require.resolve('ffprobe-static');
+  const ffprobePackageRoot = path.dirname(ffprobePackagePath);
+  
+  // The binary is in bin/linux/x64/ffprobe relative to package root
+  FFPROBE_BIN = path.join(ffprobePackageRoot, 'bin', 'linux', 'x64', 'ffprobe');
+  
+  console.log('✅ Resolved ffprobe path:', FFPROBE_BIN);
+} catch (error) {
+  console.warn('⚠️ Could not resolve ffprobe-static, falling back to system binary');
+  FFPROBE_BIN = 'ffprobe';
+}
 
 // Get static binary paths (fallback to system binaries if imports fail)
 const FFMPEG_BIN = ffmpegPath || 'ffmpeg';
-const FFPROBE_BIN = (ffprobePath?.path || ffprobePath) as string;
 
 // Debug: Log the resolved paths
 console.log('🔍 FFmpeg binary paths:', {
   ffmpeg: FFMPEG_BIN,
-  ffprobe: FFPROBE_BIN,
-  ffmpegRaw: ffmpegPath,
-  ffprobeRaw: ffprobePath
+  ffprobe: FFPROBE_BIN
 });
 
 export interface ExtractedFrame {
