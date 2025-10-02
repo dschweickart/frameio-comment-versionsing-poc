@@ -1,30 +1,44 @@
 import { execSync } from 'child_process';
 import path from 'path';
+import { existsSync } from 'fs';
 import ffmpegPath from 'ffmpeg-static';
+// @ts-expect-error - ffprobe-static doesn't have TypeScript types
+import ffprobePath from 'ffprobe-static';
 
-// Get ffprobe binary path using require.resolve to get actual installed location
-let FFPROBE_BIN: string;
-try {
-  // Get the package root directory
-  const ffprobePackagePath = require.resolve('ffprobe-static');
-  const ffprobePackageRoot = path.dirname(ffprobePackagePath);
+// Helper to fix /ROOT/ placeholder paths
+function resolveBinaryPath(binaryPath: string | null | undefined): string | null {
+  if (!binaryPath) return null;
   
-  // The binary is in bin/linux/x64/ffprobe relative to package root
-  FFPROBE_BIN = path.join(ffprobePackageRoot, 'bin', 'linux', 'x64', 'ffprobe');
+  // If path contains /ROOT/, replace it with actual working directory
+  if (binaryPath.includes('/ROOT/')) {
+    const fixed = binaryPath.replace('/ROOT/', `${process.cwd()}/`);
+    console.log(`🔧 Fixed path: ${binaryPath} -> ${fixed}`);
+    
+    // Verify the file exists
+    if (existsSync(fixed)) {
+      console.log(`✅ Binary exists at: ${fixed}`);
+      return fixed;
+    } else {
+      console.warn(`⚠️ Binary not found at: ${fixed}`);
+      return null;
+    }
+  }
   
-  console.log('✅ Resolved ffprobe path:', FFPROBE_BIN);
-} catch (error) {
-  console.warn('⚠️ Could not resolve ffprobe-static, falling back to system binary');
-  FFPROBE_BIN = 'ffprobe';
+  return binaryPath;
 }
 
-// Get static binary paths (fallback to system binaries if imports fail)
-const FFMPEG_BIN = ffmpegPath || 'ffmpeg';
+// Get static binary paths (fallback to system binaries if resolution fails)
+const resolvedFFmpeg = resolveBinaryPath(ffmpegPath);
+const resolvedFFprobe = resolveBinaryPath(ffprobePath?.path || ffprobePath);
+
+const FFMPEG_BIN = resolvedFFmpeg || 'ffmpeg';
+const FFPROBE_BIN = resolvedFFprobe || 'ffprobe';
 
 // Debug: Log the resolved paths
 console.log('🔍 FFmpeg binary paths:', {
   ffmpeg: FFMPEG_BIN,
-  ffprobe: FFPROBE_BIN
+  ffprobe: FFPROBE_BIN,
+  cwd: process.cwd()
 });
 
 export interface ExtractedFrame {
