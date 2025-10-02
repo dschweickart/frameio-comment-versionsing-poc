@@ -54,23 +54,35 @@ function verifyWebhookSignature(payload: string, signature: string, secret: stri
   }
   
   try {
-    // Frame.io uses HMAC-SHA256 with the format "sha256=<hash>"
-    const expectedSignature = `sha256=${crypto
+    // Frame.io Custom Actions use HMAC-SHA256 with format "v0=<hash>" (Svix/Stripe style)
+    // Extract the hash part after the prefix
+    let receivedHash: string;
+    if (signature.startsWith('v0=')) {
+      receivedHash = signature.substring(3); // Remove "v0=" prefix
+    } else if (signature.startsWith('sha256=')) {
+      receivedHash = signature.substring(7); // Remove "sha256=" prefix
+    } else {
+      console.warn('Webhook signature has unknown format (no v0= or sha256= prefix)');
+      receivedHash = signature; // Try without prefix
+    }
+    
+    // Calculate expected hash
+    const expectedHash = crypto
       .createHmac('sha256', secret)
       .update(payload)
-      .digest('hex')}`;
+      .digest('hex');
     
-    // Convert to buffers
-    const sigBuffer = Buffer.from(signature);
-    const expectedBuffer = Buffer.from(expectedSignature);
+    // Convert to buffers for timing-safe comparison
+    const receivedBuffer = Buffer.from(receivedHash);
+    const expectedBuffer = Buffer.from(expectedHash);
     
     // timingSafeEqual requires buffers of equal length
-    if (sigBuffer.length !== expectedBuffer.length) {
-      console.warn(`Webhook signature length mismatch: got ${sigBuffer.length}, expected ${expectedBuffer.length}`);
+    if (receivedBuffer.length !== expectedBuffer.length) {
+      console.warn(`Webhook hash length mismatch: got ${receivedBuffer.length}, expected ${expectedBuffer.length}`);
       return false;
     }
     
-    return crypto.timingSafeEqual(sigBuffer, expectedBuffer);
+    return crypto.timingSafeEqual(receivedBuffer, expectedBuffer);
   } catch (error) {
     console.error('Webhook signature verification error:', error);
     return false;
