@@ -246,8 +246,8 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
         console.log('📝 Form Data Received:', JSON.stringify(payload.data, null, 2));
         console.log('📋 Form fields:', Object.keys(payload.data));
         
-        // If this is just the confirmation step, proceed to version selection
-        if (payload.data.confirm && !payload.data.source_file_id) {
+        // If this is just the confirmation step (no source_file_id), proceed to version selection
+        if (!payload.data.source_file_id) {
           console.log('✅ User confirmed, proceeding to version selection...');
           // Fall through to version selection logic below
         } else if (payload.data.source_file_id) {
@@ -279,10 +279,27 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
           
           console.log(`✅ Found ${sourceComments.length} comments on source file`);
           
+          // Fetch file names for metadata and success message
+          let sourceFileName = 'selected source';
+          let targetFileName = 'target file';
+          
+          try {
+            if (accountId && payload.resource?.id) {
+              const [sourceFile, targetFile] = await Promise.all([
+                client.getFile(accountId, sourceFileId),
+                client.getFile(accountId, payload.resource.id)
+              ]);
+              sourceFileName = sourceFile.name || sourceFileName;
+              targetFileName = targetFile.name || targetFileName;
+            }
+          } catch {
+            console.log('⚠️  Could not fetch file names, using defaults');
+          }
+          
           const newJob: NewProcessingJob = {
             accountId,
             projectId: (payload.resource as { project_id?: string })?.project_id,
-            versionStackId: payload.data.version_stack_id as string,
+            versionStackId: null, // Not storing version stack ID anymore
             sourceFileId,
             targetFileId: payload.resource?.id,
             interactionId: payload.interaction_id,
@@ -293,8 +310,8 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
             metadata: JSON.stringify({
               sensitivity: payload.data.fuzzy_matches === 'true' ? 'low' : 'medium',
               fuzzyMatches: payload.data.fuzzy_matches === 'true',
-              sourceFileName: payload.data.source_file_name,
-              targetFileName: payload.data.target_file_name,
+              sourceFileName,
+              targetFileName,
               sourceCommentsCount: sourceComments.length,
               sourceCommentIds: sourceComments.map(c => c.id),
               triggeredAt: new Date().toISOString(),
@@ -309,27 +326,9 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
             console.error(`❌ Job ${job.id} processing failed:`, error);
           });
           
-          // Look up actual file names for better success message
-          let sourceFileName = 'selected source';
-          let targetFileName = 'target file';
-          
-          try {
-            const client = await FrameioClient.fromAccountId(accountId!);
-            if (client && accountId && payload.resource?.id) {
-              const [sourceFile, targetFile] = await Promise.all([
-                client.getFile(accountId, payload.data.source_file_id as string),
-                client.getFile(accountId, payload.resource.id)
-              ]);
-              sourceFileName = sourceFile.name || sourceFileName;
-              targetFileName = targetFile.name || targetFileName;
-            }
-          } catch {
-            console.log('⚠️  Could not fetch file names for display, using defaults');
-          }
-          
           return {
             title: "Success! 🎉",
-            description: `AI comment transfer initiated! Transferring ${sourceComments.length} comment${sourceComments.length === 1 ? '' : 's'} from "${sourceFileName}" to "${targetFileName}". Processing will begin shortly...`
+            description: "Matching comment job submitted..."
           };
         } catch (error) {
           console.error('❌ Failed to create processing job:', error);
@@ -346,17 +345,7 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
         return {
           title: "Apply comments from a previous version?",
           description: "",
-          fields: [
-            {
-              type: "select",
-              label: " ",
-              name: "confirm",
-              value: "yes",
-              options: [
-                { name: "OK", value: "yes" }
-              ]
-            }
-          ]
+          fields: []
         };
       }
       
@@ -422,6 +411,11 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
         }
         
         // Build form with dynamic source file options
+        // Sort by created date and add version numbers
+        const sortedSourceFiles = sourceFiles.sort((a, b) => 
+          new Date(a.inserted_at).getTime() - new Date(b.inserted_at).getTime()
+        );
+        
         return {
           title: `Apply comments to "${file.name}"`,
           description: "",
@@ -430,29 +424,11 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
               type: "select",
               label: "Select source",
               name: "source_file_id",
-              value: sourceFiles[0].id,
-              options: sourceFiles.map(sf => ({
-                name: sf.name,
+              value: sortedSourceFiles[0].id,
+              options: sortedSourceFiles.map((sf, index) => ({
+                name: `v${index + 1} - ${sf.name}`,
                 value: sf.id
               }))
-            },
-            {
-              type: "text",
-              label: "Version Stack ID (hidden)",
-              name: "version_stack_id",
-              value: file.parent_id
-            },
-            {
-              type: "text",
-              label: "Source File Name (hidden)",
-              name: "source_file_name",
-              value: sourceFiles[0].name
-            },
-            {
-              type: "text",
-              label: "Target File Name (hidden)",
-              name: "target_file_name",
-              value: file.name
             },
             {
               type: "boolean",
