@@ -28,10 +28,9 @@ export async function generateFrameHash(
   frameNumber?: number,
   timestamp?: number
 ): Promise<FrameHash> {
-  const identifier = frameNumber !== undefined ? `frame ${frameNumber}` : `timestamp ${timestamp?.toFixed(2)}s`;
-  console.log(`🔍 Generating perceptual hash for ${identifier}...`);
-  const startTime = Date.now();
-
+  // Removed per-frame logging to avoid Railway rate limits (500 logs/sec)
+  // Summary stats are logged by generateFrameHashes() batch function
+  
   try {
     // Step 1: Resize to 9x8 and convert to grayscale
     const resized = await sharp(frameBuffer)
@@ -63,9 +62,6 @@ export async function generateFrameHash(
 
     // Convert to hex string (16 characters for 64 bits)
     const hashString = hash.toString(16).padStart(16, '0');
-    
-    const duration = Date.now() - startTime;
-    console.log(`✅ Generated hash for ${identifier} in ${duration}ms: ${hashString}`);
 
     return {
       frameNumber,
@@ -73,6 +69,7 @@ export async function generateFrameHash(
       hash: hashString,
     };
   } catch (error) {
+    const identifier = frameNumber !== undefined ? `frame ${frameNumber}` : `timestamp ${timestamp?.toFixed(2)}s`;
     console.error(`❌ Failed to generate hash for ${identifier}:`, error);
     throw new Error(
       `Hash generation failed: ${error instanceof Error ? error.message : String(error)}`

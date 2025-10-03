@@ -288,6 +288,71 @@ export async function getVideoMetadata(videoUrl: string): Promise<{
  * 
  * Returns frames with timestamp property (in seconds).
  */
+/**
+ * Extract ALL frames from video at native frame rate or decimated rate
+ * This is often FASTER than sparse extraction because:
+ * - One continuous HTTP session (no reconnection overhead)
+ * - Sequential decode (no seeking penalty)
+ * - Optimized for continuous playback
+ * 
+ * @param videoUrl - URL to video file
+ * @param fps - Native FPS of the video
+ * @param decimationFactor - Extract every Nth frame (1 = all frames, 2 = every other frame, etc.)
+ */
+export async function extractAllFrames(
+  videoUrl: string,
+  fps: number,
+  decimationFactor: number = 1
+): Promise<ExtractedFrame[]> {
+  try {
+    const metadata = await getVideoMetadata(videoUrl);
+    const totalFrames = Math.floor(metadata.duration * fps);
+    const extractedFrames = Math.floor(totalFrames / decimationFactor);
+    
+    console.log(
+      `📹 Extracting all frames from ${metadata.duration.toFixed(1)}s video ` +
+      `(${extractedFrames.toLocaleString()} frames @ 320p, decimation: ${decimationFactor}x)...`
+    );
+    const startTime = Date.now();
+    
+    // Use fps filter to decimate: fps=24/2 extracts every 2nd frame from 24fps source
+    const fpsFilter = decimationFactor > 1 
+      ? `fps=${fps}/${decimationFactor},scale=320:-1` 
+      : `scale=320:-1`;
+    
+    // Extract all frames in one continuous pass
+    const ffmpegCommand = `"${FFMPEG_BIN}" -i "${videoUrl}" -vf "${fpsFilter}" -f image2pipe -c:v mjpeg -q:v 5 -pix_fmt yuvj420p -`;
+    
+    const jpegStream = execSync(ffmpegCommand, {
+      encoding: 'buffer',
+      maxBuffer: 200 * 1024 * 1024, // 200MB buffer for long videos
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    const duration = Date.now() - startTime;
+    const realtimeRatio = metadata.duration / (duration / 1000);
+    console.log(
+      `✅ Extracted ${extractedFrames.toLocaleString()} frames in ${(duration / 1000).toFixed(1)}s ` +
+      `(${realtimeRatio.toFixed(1)}x realtime, ${(duration / extractedFrames).toFixed(1)}ms per frame)`
+    );
+
+    const frames = parseJpegStream(jpegStream);
+    
+    // Assign accurate timestamps based on decimation factor
+    const timePerFrame = (1 / fps) * decimationFactor;
+    frames.forEach((frame, index) => {
+      frame.timestamp = index * timePerFrame;
+      frame.frameNumber = index * decimationFactor;
+    });
+
+    console.log(`✅ All frames ready for matching (${frames.length.toLocaleString()} frames)`);
+    return frames;
+  } catch (error) {
+    console.error('❌ FFmpeg all-frames extraction failed:', error);
+    throw new Error(`Failed to extract all frames: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 export async function extractIFrames(
   videoUrl: string,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -300,7 +365,8 @@ export async function extractIFrames(
     const selectFilter = `eq(pict_type\\,I)`;
     const ffmpegCommand = `"${FFMPEG_BIN}" -i "${videoUrl}" -vf "scale=320:-1,select='${selectFilter}'" -vsync 0 -f image2pipe -c:v mjpeg -q:v 5 -`;
     
-    console.log(`📹 Running FFmpeg I-frame extraction...`);
+    const metadata = await getVideoMetadata(videoUrl);
+    console.log(`📹 Extracting I-frames from ${metadata.duration.toFixed(1)}s video (this may take 10-30s for long videos)...`);
     const startTime = Date.now();
     
     const jpegStream = execSync(ffmpegCommand, {
@@ -310,14 +376,13 @@ export async function extractIFrames(
     });
 
     const duration = Date.now() - startTime;
-    console.log(`✅ FFmpeg completed in ${(duration / 1000).toFixed(1)}s, parsing JPEG stream...`);
+    console.log(`✅ FFmpeg completed in ${(duration / 1000).toFixed(1)}s (${(metadata.duration / (duration / 1000)).toFixed(1)}x realtime), parsing frames...`);
 
     const frames = parseJpegStream(jpegStream);
     
     // For I-frames, we don't know exact frame numbers ahead of time
     // FFmpeg outputs them sequentially, so we estimate timestamps
     // based on uniform distribution (we'll refine this if needed)
-    const metadata = await getVideoMetadata(videoUrl);
     const timePerFrame = metadata.duration / frames.length;
     
     frames.forEach((frame, index) => {

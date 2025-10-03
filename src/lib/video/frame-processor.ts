@@ -274,7 +274,7 @@ export class FrameProcessor {
       const sourceHashes = await generateFrameHashes(sourceFrameData);
       console.log(`Generated ${sourceHashes.length} hashes for source frames`);
 
-      // ========== PHASE 2: TARGET VIDEO PROCESSING (I-frame extraction) ==========
+      // ========== PHASE 2: TARGET VIDEO PROCESSING (ALL frames for frame-perfect matching) ==========
       
       await this.updateJobProgress(jobId, 'processing', 0.6, 'Processing target video...');
       const targetFile = await this.client.getFileWithMediaLinks(accountId, targetFileId);
@@ -287,111 +287,51 @@ export class FrameProcessor {
       const targetMetadata = await getVideoMetadata(targetVideoUrl);
       console.log(`Target video: ${targetMetadata.width}x${targetMetadata.height}, ${targetMetadata.fps}fps, ${targetMetadata.duration}s`);
 
-      // Extract I-frames (natural encoding keyframes - adaptive density)
-      await this.updateJobProgress(jobId, 'processing', 0.7, 'Extracting I-frames from target...');
-      const targetKeyframes = await extractIFrames(
+      // Extract ALL frames from target in one continuous pass (much faster than I-frames + refinement)
+      // Using decimation factor of 1 = every frame for frame-perfect accuracy
+      await this.updateJobProgress(jobId, 'processing', 0.7, 'Extracting all frames from target...');
+      const { extractAllFrames } = await import('./frame-extractor');
+      const allTargetFrames = await extractAllFrames(
         targetVideoUrl,
-        targetMetadata.fps
-      );
-      console.log(`Extracted ${targetKeyframes.length} I-frames from target`);
-
-      // Generate hashes for target I-frames
-      await this.updateJobProgress(jobId, 'processing', 0.75, 'Generating hashes for target I-frames...');
-      const targetHashes = await generateFrameHashes(targetKeyframes);
-      console.log(`Generated ${targetHashes.length} hashes for target I-frames`);
-
-      // ========== PHASE 3: COARSE MATCHING ==========
-      
-      await this.updateJobProgress(jobId, 'processing', 0.8, 'Finding coarse matches...');
-      const coarseMatches = this.matchSourceToTarget(sourceHashes, targetHashes);
-      console.log(`\n📊 Coarse Matching Results:`);
-      console.log(`   Found ${coarseMatches.length} coarse matches`);
-      
-      // ========== PHASE 4: REFINEMENT WITH -SS SEEKING ==========
-      
-      await this.updateJobProgress(jobId, 'processing', 0.85, 'Refining matches...');
-      
-      // Extract refinement frames using -ss seeking (parallel, HTTP range requests)
-      const refinementTimestamps = coarseMatches.map(m => m.targetTimestamp);
-      const refinementFrames = await extractRefinementFrames(
-        targetVideoUrl,
-        refinementTimestamps,
         targetMetadata.fps,
-        REFINEMENT_WINDOW_SECONDS,
-        4 // 4 concurrent FFmpeg processes
+        1 // Extract every frame for maximum accuracy
       );
+      console.log(`Extracted ${allTargetFrames.length} frames from target`);
 
-      console.log(`Extracted ${refinementFrames.length} refinement frames`);
+      // Generate hashes for all target frames
+      await this.updateJobProgress(jobId, 'processing', 0.75, 'Generating hashes for all target frames...');
+      const targetHashes = await generateFrameHashes(allTargetFrames);
+      console.log(`Generated ${targetHashes.length} hashes for all target frames`);
 
-      // Generate hashes for refinement frames
-      const refinementHashes = await generateFrameHashes(refinementFrames);
-      console.log(`Generated ${refinementHashes.length} refinement hashes`);
-
-      // Create lookup map for refinement hashes by timestamp
-      const refinementHashMap = new Map<number, FrameHash[]>();
-      refinementHashes.forEach(hash => {
-        if (hash.timestamp !== undefined) {
-          const rounded = parseFloat(hash.timestamp.toFixed(2)); // Round to 0.01s precision
-          if (!refinementHashMap.has(rounded)) {
-            refinementHashMap.set(rounded, []);
-          }
-          refinementHashMap.get(rounded)!.push(hash);
-        }
+      // ========== PHASE 3: FRAME-PERFECT MATCHING ==========
+      // Since we extracted ALL frames, no refinement needed - we already have frame-perfect accuracy!
+      
+      await this.updateJobProgress(jobId, 'processing', 0.8, 'Finding frame-perfect matches...');
+      const matches = this.matchSourceToTarget(sourceHashes, targetHashes);
+      
+      console.log(`\n📊 Frame-Perfect Matching Results:`);
+      console.log(`   Found ${matches.length} matches`);
+      
+      // Convert to final format with frame numbers
+      const finalMatches: CommentMatch[] = matches.map(match => {
+        // Convert timestamp to frame number for Frame.io API
+        const targetFrameNumber = Math.round(match.targetTimestamp * targetMetadata.fps);
+        
+        console.log(`  Comment "${match.sourceComment.text?.substring(0, 50)}..."`);
+        console.log(`    Source: frame ${match.sourceComment.timestamp}`);
+        console.log(`    Match: ${match.targetTimestamp.toFixed(2)}s → frame ${targetFrameNumber} (${(match.similarity * 100).toFixed(1)}% similarity)`);
+        
+        return {
+          sourceComment: match.sourceComment,
+          targetFrameNumber,
+          targetTimestamp: match.targetTimestamp,
+          hammingDistance: match.hammingDistance,
+          similarity: match.similarity,
+        };
       });
 
-      // Refine each match
-      const finalMatches: CommentMatch[] = [];
-      
-      for (let i = 0; i < coarseMatches.length; i++) {
-        const coarseMatch = coarseMatches[i];
-        const sourceHash = sourceHashes.find(h => h.frameNumber === coarseMatch.sourceComment.timestamp);
-        
-        if (!sourceHash) continue;
-
-        // Find best match within refinement window
-        let bestMatch = {
-          timestamp: coarseMatch.targetTimestamp,
-          distance: coarseMatch.hammingDistance,
-          similarity: coarseMatch.similarity,
-        };
-
-        // Check all refinement frames near this timestamp
-        const windowStart = coarseMatch.targetTimestamp - REFINEMENT_WINDOW_SECONDS;
-        const windowEnd = coarseMatch.targetTimestamp + REFINEMENT_WINDOW_SECONDS;
-        
-        for (const refHash of refinementHashes) {
-          if (refHash.timestamp && refHash.timestamp >= windowStart && refHash.timestamp <= windowEnd) {
-            const distance = hammingDistance(sourceHash.hash, refHash.hash);
-            const similarity = hashSimilarity(sourceHash.hash, refHash.hash);
-            
-            if (distance < bestMatch.distance) {
-              bestMatch = {
-                timestamp: refHash.timestamp,
-                distance,
-                similarity,
-              };
-            }
-          }
-        }
-
-        // Convert timestamp to frame number for Frame.io API
-        const targetFrameNumber = Math.round(bestMatch.timestamp * targetMetadata.fps);
-        
-        finalMatches.push({
-          sourceComment: coarseMatch.sourceComment,
-          targetFrameNumber,
-          targetTimestamp: bestMatch.timestamp,
-          hammingDistance: bestMatch.distance,
-          similarity: bestMatch.similarity,
-        });
-
-        console.log(`  Comment "${coarseMatch.sourceComment.text?.substring(0, 30)}..."`);
-        console.log(`    Source: frame ${coarseMatch.sourceComment.timestamp}`);
-        console.log(`    Coarse: ${coarseMatch.targetTimestamp.toFixed(2)}s (similarity: ${(coarseMatch.similarity * 100).toFixed(1)}%)`);
-        console.log(`    Refined: ${bestMatch.timestamp.toFixed(2)}s → frame ${targetFrameNumber} (similarity: ${(bestMatch.similarity * 100).toFixed(1)}%)`);
-      }
-
       await this.updateJobProgress(jobId, 'processing', 0.9, `Matched ${finalMatches.length} comments`);
+      console.log(`\n✅ Frame processing complete: ${finalMatches.length} matches found\n`);
       
       return finalMatches;
 
