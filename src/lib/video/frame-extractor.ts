@@ -1,5 +1,6 @@
-import { execSync } from 'child_process';
+import { execSync, spawn } from 'child_process';
 import { existsSync } from 'fs';
+import { generateFrameHash, type FrameHash } from '../ai/perceptual-hash';
 
 // Helper to find FFmpeg/ffprobe binaries
 // Priority: 1. System binaries (/usr/bin) 2. npm static binaries 3. PATH
@@ -196,8 +197,57 @@ export async function extractKeyframes(
 }
 
 /**
+ * Parse a PNG stream buffer into individual frame buffers
+ * PNG is lossless, preserving full image quality for accurate perceptual hashing
+ * PNG signature: 89 50 4E 47 0D 0A 1A 0A, IEND: 49 45 4E 44 AE 42 60 82
+ * 
+ * NOTE: This function is deprecated in favor of inline streaming parsing in extractAllFrames()
+ * which processes frames as they arrive to minimize memory usage.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function parsePngStream(
+  streamBuffer: Buffer,
+  knownFrameNumbers?: number[]
+): ExtractedFrame[] {
+  const frames: ExtractedFrame[] = [];
+  // PNG signature: 89 50 4E 47 0D 0A 1A 0A (8 bytes)
+  const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+  // IEND chunk (marks end of PNG): 49 45 4E 44 AE 42 60 82
+  const PNG_IEND = Buffer.from([0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82]);
+
+  let currentPos = 0;
+  let frameIndex = 0;
+
+  while (currentPos < streamBuffer.length) {
+    // Find start of PNG
+    const startPos = streamBuffer.indexOf(PNG_SIGNATURE, currentPos);
+    if (startPos === -1) break;
+
+    // Find IEND chunk (search after start position + signature length)
+    const iendPos = streamBuffer.indexOf(PNG_IEND, startPos + PNG_SIGNATURE.length);
+    if (iendPos === -1) break;
+
+    // Extract frame (include IEND chunk + 4 bytes CRC)
+    const endPos = iendPos + PNG_IEND.length;
+    const frameBuffer = streamBuffer.subarray(startPos, endPos);
+    
+    frames.push({
+      frameNumber: knownFrameNumbers ? knownFrameNumbers[frameIndex] : frameIndex,
+      buffer: frameBuffer,
+    });
+
+    frameIndex++;
+    currentPos = endPos;
+  }
+
+  return frames;
+}
+
+/**
  * Parse a JPEG stream buffer into individual frame buffers
  * JPEG markers: FF D8 (start) and FF D9 (end)
+ * 
+ * DEPRECATED: Use parsePngStream for lossless extraction
  */
 function parseJpegStream(
   streamBuffer: Buffer,
@@ -289,68 +339,205 @@ export async function getVideoMetadata(videoUrl: string): Promise<{
  * Returns frames with timestamp property (in seconds).
  */
 /**
- * Extract ALL frames from video at native frame rate or decimated rate
- * This is often FASTER than sparse extraction because:
+ * Extract ALL frames from video with inline perceptual hashing
+ * Uses streaming + queue-based processing to minimize memory usage
+ * 
+ * Architecture:
+ * 1. FFmpeg stdout → Extract complete PNG frames synchronously → frameQueue[]
+ * 2. Async processor → Hash batches of 10 frames in parallel → hashes[]
+ * 3. Only 16-byte hashes stored (not 20KB PNG buffers)
+ * 
+ * This is FASTER than sparse extraction because:
  * - One continuous HTTP session (no reconnection overhead)
  * - Sequential decode (no seeking penalty)
- * - Optimized for continuous playback
+ * - Inline hashing keeps memory usage low (~2MB vs 4.5GB)
+ * - Parallel hashing (10 concurrent) keeps up with extraction
+ * 
+ * Memory profile:
+ * - chunks[]: ~320KB (raw FFmpeg output accumulator)
+ * - frameQueue[]: ~1MB (10-50 PNGs waiting to be hashed)
+ * - hashes[]: ~500KB (31,200 * 16 bytes for full video)
+ * - Total peak: ~2MB (vs 4.5GB if storing all frames)
  * 
  * @param videoUrl - URL to video file
  * @param fps - Native FPS of the video
  * @param decimationFactor - Extract every Nth frame (1 = all frames, 2 = every other frame, etc.)
+ * @returns Array of FrameHash objects (16 bytes each, not full frames)
  */
 export async function extractAllFrames(
   videoUrl: string,
   fps: number,
   decimationFactor: number = 1
-): Promise<ExtractedFrame[]> {
-  try {
-    const metadata = await getVideoMetadata(videoUrl);
-    const totalFrames = Math.floor(metadata.duration * fps);
-    const extractedFrames = Math.floor(totalFrames / decimationFactor);
-    
-    console.log(
-      `📹 Extracting all frames from ${metadata.duration.toFixed(1)}s video ` +
-      `(${extractedFrames.toLocaleString()} frames @ 320p, decimation: ${decimationFactor}x)...`
-    );
-    const startTime = Date.now();
-    
-    // Use fps filter to decimate: fps=24/2 extracts every 2nd frame from 24fps source
-    const fpsFilter = decimationFactor > 1 
-      ? `fps=${fps}/${decimationFactor},scale=320:-1` 
-      : `scale=320:-1`;
-    
-    // Extract all frames in one continuous pass
-    const ffmpegCommand = `"${FFMPEG_BIN}" -i "${videoUrl}" -vf "${fpsFilter}" -f image2pipe -c:v mjpeg -q:v 5 -pix_fmt yuvj420p -`;
-    
-    const jpegStream = execSync(ffmpegCommand, {
-      encoding: 'buffer',
-      maxBuffer: 200 * 1024 * 1024, // 200MB buffer for long videos
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
+): Promise<FrameHash[]> {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const metadata = await getVideoMetadata(videoUrl);
+      const totalFrames = Math.floor(metadata.duration * fps);
+      const extractedFrames = Math.floor(totalFrames / decimationFactor);
+      
+      console.log(
+        `📹 Streaming all frames from ${metadata.duration.toFixed(1)}s video ` +
+        `(${extractedFrames.toLocaleString()} frames @ 320p, decimation: ${decimationFactor}x)...`
+      );
+      const startTime = Date.now();
+      
+      // Queue for extracted PNG buffers (waiting to be hashed)
+      const frameQueue: Array<{ frameNumber: number; timestamp: number; buffer: Buffer }> = [];
+      const hashes: FrameHash[] = [];
+      let frameIndex = 0;
+      let chunks: Buffer[] = [];
+      let processingActive = false;
+      let lastProgressLog = Date.now();
+      
+      const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+      const PNG_IEND = Buffer.from([0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82]);
 
-    const duration = Date.now() - startTime;
-    const realtimeRatio = metadata.duration / (duration / 1000);
-    console.log(
-      `✅ Extracted ${extractedFrames.toLocaleString()} frames in ${(duration / 1000).toFixed(1)}s ` +
-      `(${realtimeRatio.toFixed(1)}x realtime, ${(duration / extractedFrames).toFixed(1)}ms per frame)`
-    );
+      // Async worker: Process frames from queue in batches
+      async function processQueue() {
+        if (processingActive || frameQueue.length === 0) return;
+        processingActive = true;
+        
+        // Process up to 10 frames in parallel for optimal CPU utilization
+        const batch = frameQueue.splice(0, 10);
+        
+        try {
+          const batchHashes = await Promise.all(
+            batch.map(({ frameNumber, timestamp, buffer }) => 
+              generateFrameHash(buffer, frameNumber, timestamp)
+            )
+          );
+          
+          hashes.push(...batchHashes);
+        } catch (error) {
+          console.error('❌ Batch hashing failed:', error);
+          reject(error);
+          return;
+        }
+        
+        processingActive = false;
+        
+        // Continue processing if more frames available
+        if (frameQueue.length > 0) {
+          setImmediate(() => processQueue());
+        }
+      }
 
-    const frames = parseJpegStream(jpegStream);
-    
-    // Assign accurate timestamps based on decimation factor
-    const timePerFrame = (1 / fps) * decimationFactor;
-    frames.forEach((frame, index) => {
-      frame.timestamp = index * timePerFrame;
-      frame.frameNumber = index * decimationFactor;
-    });
+      // Use fps filter to decimate: fps=24/2 extracts every 2nd frame from 24fps source
+      const fpsFilter = decimationFactor > 1 
+        ? `fps=${fps}/${decimationFactor},scale=320:-1` 
+        : `scale=320:-1`;
+      
+      // Spawn FFmpeg process with streaming output
+      // Using PNG for lossless compression to preserve matching accuracy
+      const args = [
+        '-i', videoUrl,
+        '-vf', fpsFilter,
+        '-f', 'image2pipe',
+        '-c:v', 'png',
+        '-'
+      ];
 
-    console.log(`✅ All frames ready for matching (${frames.length.toLocaleString()} frames)`);
-    return frames;
-  } catch (error) {
-    console.error('❌ FFmpeg all-frames extraction failed:', error);
-    throw new Error(`Failed to extract all frames: ${error instanceof Error ? error.message : String(error)}`);
-  }
+      const ffmpeg = spawn(FFMPEG_BIN, args, {
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      // Data handler: Extract PNGs synchronously (NO AWAIT - critical for stream throughput)
+      ffmpeg.stdout.on('data', (chunk: Buffer) => {
+        chunks.push(chunk);
+        const buffer = Buffer.concat(chunks);
+        let searchPos = 0;
+        
+        while (true) {
+          // Find complete PNG (signature → IEND marker)
+          const pngStart = buffer.indexOf(PNG_SIGNATURE, searchPos);
+          if (pngStart === -1) break;
+          
+          const pngEnd = buffer.indexOf(PNG_IEND, pngStart + 8);
+          if (pngEnd === -1) break;  // Incomplete PNG, wait for more data
+          
+          const frameEnd = pngEnd + 8;  // IEND is 8 bytes
+          const frameBuffer = buffer.subarray(pngStart, frameEnd);
+          
+          // Calculate frame metadata
+          const timePerFrame = (1 / fps) * decimationFactor;
+          const timestamp = frameIndex * timePerFrame;
+          const frameNumber = frameIndex * decimationFactor;
+          
+          // Add to queue (sync operation - no blocking)
+          frameQueue.push({
+            frameNumber,
+            timestamp,
+            buffer: frameBuffer,
+          });
+          
+          frameIndex++;
+          searchPos = frameEnd;
+          
+          // Log progress every 5 seconds
+          const now = Date.now();
+          if (now - lastProgressLog > 5000) {
+            const elapsed = (now - startTime) / 1000;
+            const queueSize = frameQueue.length;
+            const hashesGenerated = hashes.length;
+            console.log(
+              `   Processing... ${frameIndex.toLocaleString()} frames extracted, ` +
+              `${hashesGenerated.toLocaleString()} hashed (queue: ${queueSize}), ` +
+              `${elapsed.toFixed(1)}s elapsed`
+            );
+            lastProgressLog = now;
+          }
+        }
+        
+        // Cleanup: Keep only unprocessed bytes (always reset, even if searchPos === 0)
+        chunks = [buffer.subarray(searchPos)];
+        
+        // Trigger async processing (non-blocking)
+        setImmediate(() => processQueue());
+      });
+
+      ffmpeg.stderr.on('data', (data: Buffer) => {
+        const message = data.toString();
+        if (message.includes('Error') || message.includes('error')) {
+          console.error('FFmpeg stderr:', message);
+        }
+      });
+
+      ffmpeg.on('close', async (code) => {
+        if (code !== 0) {
+          reject(new Error(`FFmpeg process exited with code ${code}`));
+          return;
+        }
+
+        try {
+          // Wait for remaining frames to be hashed
+          while (frameQueue.length > 0 || processingActive) {
+            await new Promise(resolve => setTimeout(resolve, 10));
+          }
+          
+          const duration = Date.now() - startTime;
+          const realtimeRatio = metadata.duration / (duration / 1000);
+          
+          console.log(
+            `✅ Streamed and hashed ${hashes.length.toLocaleString()} frames in ${(duration / 1000).toFixed(1)}s ` +
+            `(${realtimeRatio.toFixed(1)}x realtime)`
+          );
+
+          console.log(`✅ All frames hashed and ready for matching (${hashes.length.toLocaleString()} hashes, ~${(hashes.length * 16 / 1024).toFixed(0)}KB)`);
+          resolve(hashes);
+        } catch (error) {
+          reject(error);
+        }
+      });
+
+      ffmpeg.on('error', (error) => {
+        reject(new Error(`FFmpeg spawn error: ${error.message}`));
+      });
+
+    } catch (error) {
+      console.error('❌ FFmpeg all-frames extraction failed:', error);
+      reject(new Error(`Failed to extract all frames: ${error instanceof Error ? error.message : String(error)}`));
+    }
+  });
 }
 
 export async function extractIFrames(

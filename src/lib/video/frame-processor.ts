@@ -287,21 +287,17 @@ export class FrameProcessor {
       const targetMetadata = await getVideoMetadata(targetVideoUrl);
       console.log(`Target video: ${targetMetadata.width}x${targetMetadata.height}, ${targetMetadata.fps}fps, ${targetMetadata.duration}s`);
 
-      // Extract ALL frames from target in one continuous pass (much faster than I-frames + refinement)
+      // Extract ALL frames from target with inline hashing (much faster than I-frames + refinement)
       // Using decimation factor of 1 = every frame for frame-perfect accuracy
-      await this.updateJobProgress(jobId, 'processing', 0.7, 'Extracting all frames from target...');
+      // Frames are hashed inline during extraction to minimize memory usage (~2MB vs 4.5GB)
+      await this.updateJobProgress(jobId, 'processing', 0.7, 'Extracting and hashing all frames from target...');
       const { extractAllFrames } = await import('./frame-extractor');
-      const allTargetFrames = await extractAllFrames(
+      const targetHashes = await extractAllFrames(
         targetVideoUrl,
         targetMetadata.fps,
         1 // Extract every frame for maximum accuracy
       );
-      console.log(`Extracted ${allTargetFrames.length} frames from target`);
-
-      // Generate hashes for all target frames
-      await this.updateJobProgress(jobId, 'processing', 0.75, 'Generating hashes for all target frames...');
-      const targetHashes = await generateFrameHashes(allTargetFrames);
-      console.log(`Generated ${targetHashes.length} hashes for all target frames`);
+      console.log(`Extracted and hashed ${targetHashes.length} frames from target`);
 
       // ========== PHASE 3: FRAME-PERFECT MATCHING ==========
       // Since we extracted ALL frames, no refinement needed - we already have frame-perfect accuracy!
