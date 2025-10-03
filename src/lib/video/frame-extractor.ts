@@ -1,11 +1,11 @@
 import { execSync } from 'child_process';
-import path from 'path';
 import { existsSync } from 'fs';
 
 // Helper to find FFmpeg/ffprobe binaries
 // Priority: 1. System binaries (/usr/bin) 2. npm static binaries 3. PATH
+// Railway: Uses apt-installed ffmpeg via RAILPACK_DEPLOY_APT_PACKAGES
 function findBinary(name: 'ffmpeg' | 'ffprobe'): string {
-  // 1. Check system binaries (Railway with RAILPACK_PACKAGES)
+  // 1. Check system binaries (Railway with RAILPACK_DEPLOY_APT_PACKAGES)
   const systemPath = `/usr/bin/${name}`;
   if (existsSync(systemPath)) {
     console.log(`✅ Using system ${name}: ${systemPath}`);
@@ -15,18 +15,21 @@ function findBinary(name: 'ffmpeg' | 'ffprobe'): string {
   // 2. Try npm static binaries (for local development)
   try {
     if (name === 'ffmpeg') {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const ffmpegPath = require('ffmpeg-static');
       if (ffmpegPath && existsSync(ffmpegPath)) {
         console.log(`✅ Using static ${name}: ${ffmpegPath}`);
         return ffmpegPath;
       }
     } else {
-      // @ts-expect-error - ffprobe-static doesn't have TypeScript types
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const ffprobePath = require('ffprobe-static');
-      const path = ffprobePath?.path || ffprobePath;
-      if (path && existsSync(path)) {
-        console.log(`✅ Using static ${name}: ${path}`);
-        return path;
+      const binaryPath = typeof ffprobePath === 'object' && ffprobePath?.path 
+        ? ffprobePath.path 
+        : ffprobePath;
+      if (binaryPath && existsSync(binaryPath)) {
+        console.log(`✅ Using static ${name}: ${binaryPath}`);
+        return binaryPath;
       }
     }
   } catch (error) {
