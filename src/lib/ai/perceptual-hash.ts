@@ -4,6 +4,7 @@ export interface FrameHash {
   frameNumber?: number;  // For source frames (Frame.io uses frame numbers)
   timestamp?: number;    // For target frames (in seconds)
   hash: string;          // 256-character hex string for 1024-bit hash
+  avgBrightness?: number; // Average brightness (0-255) for black frame detection
 }
 
 export interface MatchResult {
@@ -48,7 +49,14 @@ export async function generateFrameHash(
       .raw()
       .toBuffer();
 
-    // Step 2: Calculate dHash by comparing adjacent pixels
+    // Step 2: Calculate average brightness for black frame detection
+    let totalBrightness = 0;
+    for (let i = 0; i < resized.length; i++) {
+      totalBrightness += resized[i];
+    }
+    const avgBrightness = Math.round(totalBrightness / resized.length);
+
+    // Step 3: Calculate dHash by comparing adjacent pixels
     let hash = 0n;
     let bitIndex = 0;
 
@@ -76,6 +84,7 @@ export async function generateFrameHash(
       frameNumber,
       timestamp,
       hash: hashString,
+      avgBrightness,
     };
   } catch (error) {
     const identifier = frameNumber !== undefined ? `frame ${frameNumber}` : `timestamp ${timestamp?.toFixed(2)}s`;
@@ -125,21 +134,33 @@ export function hashSimilarity(hash1: string, hash2: string): number {
 /**
  * Match source frame to target frames with confidence scoring
  * Handles ambiguous content (motion blur, similar frames, re-encoding)
+ * Special handling for black frames with temporal position preference
  * 
  * @param sourceHash - Hash of the source comment frame
  * @param targetHashes - All target video hashes
+ * @param videoDuration - Duration of video in seconds (for edge detection)
  * @returns Match result with action, confidence, and candidates
  */
 export function matchWithConfidence(
   sourceHash: FrameHash,
-  targetHashes: FrameHash[]
+  targetHashes: FrameHash[],
+  videoDuration?: number
 ): MatchResult {
+  // Detect black frames (average brightness < 30 out of 255)
+  const BLACK_THRESHOLD = 30;
+  const EDGE_WINDOW_SECONDS = 10; // First/last 10 seconds
+  
+  const isBlackFrame = sourceHash.avgBrightness !== undefined && sourceHash.avgBrightness < BLACK_THRESHOLD;
+  const sourceTimestamp = sourceHash.timestamp ?? (sourceHash.frameNumber ? sourceHash.frameNumber / 24 : 0);
+  const isNearEdge = videoDuration && (sourceTimestamp < EDGE_WINDOW_SECONDS || sourceTimestamp > videoDuration - EDGE_WINDOW_SECONDS);
+  
   // Sort by Hamming distance (best matches first)
   const sorted = targetHashes
     .map(t => ({ 
       frame: t.frameNumber || 0,
       timestamp: t.timestamp || 0,
-      distance: hammingDistance(sourceHash.hash, t.hash) 
+      distance: hammingDistance(sourceHash.hash, t.hash),
+      avgBrightness: t.avgBrightness || 0
     }))
     .sort((a, b) => a.distance - b.distance);
   
@@ -154,6 +175,31 @@ export function matchWithConfidence(
       confidence: 'none',
       reason: `no_similar_frames_found (best: ${(1 - best.distance / 1024).toFixed(2)})`
     };
+  }
+  
+  // Black frame edge case handling
+  // If source is black AND near first/last 10s AND multiple targets are equally black
+  if (isBlackFrame && isNearEdge && best.avgBrightness < BLACK_THRESHOLD) {
+    // Find all nearly-identical black frames (distance within 5 bits)
+    const identicalBlacks = sorted.filter(m => 
+      m.avgBrightness < BLACK_THRESHOLD && m.distance - best.distance < 5
+    );
+    
+    if (identicalBlacks.length > 1) {
+      // Prefer the frame closest to original temporal position
+      const preferredMatch = identicalBlacks.reduce((prev, curr) => {
+        const prevDiff = Math.abs(prev.timestamp - sourceTimestamp);
+        const currDiff = Math.abs(curr.timestamp - sourceTimestamp);
+        return currDiff < prevDiff ? curr : prev;
+      });
+      
+      return {
+        action: 'transfer',
+        targetFrame: preferredMatch.frame,
+        confidence: 'low',
+        reason: `black_frame_temporal_preference (${identicalBlacks.length} identical blacks, chose nearest to original position)`
+      };
+    }
   }
   
   // Clear winner - high confidence

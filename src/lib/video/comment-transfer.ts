@@ -114,15 +114,21 @@ export class CommentTransfer {
       }
 
       // Use the targetFrameNumber from the match (already calculated with correct FPS)
-      const frameNumber = match.targetFrameNumber;
+      const matchedFrameNumber = match.targetFrameNumber;
+      
+      // WORKAROUND: Frame.io bug - comments display 1 frame early (n-1)
+      // When we send frame N, Frame.io displays it at frame N-1
+      // Therefore, send N+1 to display at the correct frame N
+      // Example: We want frame 336 → send 337 → Frame.io displays at 336
+      const frameNumber = matchedFrameNumber + 1;
 
       try {
         console.log(
           `📝 Transferring comment: "${commentText.substring(0, 50)}..." ` +
           `(${(similarity * 100).toFixed(1)}% match, ${confidence} confidence) ` +
-          `to frame ${frameNumber} (${targetTimestamp.toFixed(2)}s)`
+          `to frame ${matchedFrameNumber} (${targetTimestamp.toFixed(2)}s)`
         );
-        console.log(`   🔍 TRANSFER DEBUG: Source Frame.io=${sourceComment.timestamp} → Sending to Frame.io API: ${frameNumber}`);
+        console.log(`   Frame.io API: matched frame ${matchedFrameNumber} → sending ${frameNumber} (compensate for Frame.io n-1 bug)`);
 
         const commentData = {
           text: commentText,
