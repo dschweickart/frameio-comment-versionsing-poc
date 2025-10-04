@@ -52,8 +52,13 @@ export async function processJob(jobId: string): Promise<JobResult> {
 
     // Step 2: Create Frame.io client
     await updateJob(jobId, 'processing', 0.05, 'Authenticating with Frame.io...');
-    const client = await FrameioClient.fromAccountId(job.accountId!);
     
+    // Use userId instead of accountId (users can belong to multiple accounts)
+    if (!job.userId) {
+      throw new Error('Job missing userId - cannot authenticate');
+    }
+    
+    const client = await FrameioClient.fromUserId(job.userId);
     if (!client) {
       throw new Error('Failed to create Frame.io client - user not authenticated');
     }

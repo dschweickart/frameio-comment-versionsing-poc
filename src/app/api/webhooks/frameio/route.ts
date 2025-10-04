@@ -219,11 +219,20 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
           const sourceFileId = payload.data.source_file_id as string;
           
           // Fetch comments from source file before creating job
-          const client = await FrameioClient.fromAccountId(accountId!);
-          if (!client) {
+          // Use user_id instead of account_id (users can belong to multiple accounts)
+          const userId = payload.user?.id;
+          if (!userId) {
             return {
               title: "Authentication Error ❌",
-              description: "Could not authenticate with Frame.io. Please sign in again."
+              description: "User ID not found in webhook payload."
+            };
+          }
+          
+          const client = await FrameioClient.fromUserId(userId);
+          if (!client) {
+            return {
+              title: "Authentication Required ❌",
+              description: "Please sign in to the application first, then try again."
             };
           }
           
@@ -335,12 +344,20 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
         }
         
         // Initial request - fetch version stack and show form
-        const client = await FrameioClient.fromAccountId(accountId);
+        // Use user_id instead of account_id (users can belong to multiple accounts)
+        const userId = payload.user?.id;
+        if (!userId) {
+          return {
+            title: "Error ❌",
+            description: "User ID not found in webhook payload."
+          };
+        }
         
+        const client = await FrameioClient.fromUserId(userId);
         if (!client) {
           return {
             title: "Authentication Required ❌",
-            description: `Please sign in to the application first. (Account: ${accountId?.substring(0, 8)})`
+            description: "Please sign in to the application first, then try again."
           };
         }
         
