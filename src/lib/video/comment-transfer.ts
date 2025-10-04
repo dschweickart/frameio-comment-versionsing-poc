@@ -80,7 +80,7 @@ export class CommentTransfer {
       console.log(`\n📦 Batch ${batchIndex + 1}/${totalBatches}: Processing ${batch.length} comments (${batchStart + 1}-${batchEnd})...`);
 
       for (const match of batch) {
-      const { sourceComment, targetTimestamp, similarity } = match;
+      const { sourceComment, targetTimestamp, similarity, confidence } = match;
 
       // Check similarity threshold
       if (similarity < minSimilarity) {
@@ -100,10 +100,17 @@ export class CommentTransfer {
         continue;
       }
 
-      // Prepare comment text
-      let commentText = sourceComment.text || '';
+      // Prepare comment text with confidence indicator
+      const confidenceEmoji = {
+        high: '✓',
+        medium: '~',
+        low: '?'
+      }[confidence || 'medium'];
+      
+      // FIXED: Use actual comment text instead of placeholder frame number
+      let commentText = sourceComment.text || 'No comment text';
       if (addPrefix) {
-        commentText = `[Transferred] ${commentText}`;
+        commentText = `[Transferred ${confidenceEmoji}] ${commentText}`;
       }
 
       // Convert timestamp to frame number (Frame.io expects frame number starting from 1)

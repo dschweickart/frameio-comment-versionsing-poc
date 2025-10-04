@@ -8,7 +8,15 @@ import {
   getVideoMetadata,
   REFINEMENT_WINDOW_SECONDS
 } from './frame-extractor';
-import { generateFrameHashes, hammingDistance, hashSimilarity, type FrameHash } from '../ai/perceptual-hash';
+import { 
+  generateFrameHashes, 
+  hammingDistance, 
+  hashSimilarity, 
+  matchWithConfidence,
+  refineWithNeighbors,
+  type FrameHash,
+  type MatchResult 
+} from '../ai/perceptual-hash';
 import { FrameioClient, FrameioComment } from '@/lib/frameio-client';
 
 export interface ProcessingOptions {
@@ -30,6 +38,8 @@ export interface CommentMatch {
   targetTimestamp: number;
   hammingDistance: number;
   similarity: number;
+  confidence?: 'high' | 'medium' | 'low';
+  reason?: string;
 }
 
 /**
@@ -299,37 +309,121 @@ export class FrameProcessor {
       );
       console.log(`Extracted and hashed ${targetHashes.length} frames from target`);
 
-      // ========== PHASE 3: FRAME-PERFECT MATCHING ==========
-      // Since we extracted ALL frames, no refinement needed - we already have frame-perfect accuracy!
+      // ========== PHASE 3: CONFIDENCE-BASED MATCHING WITH OPTIONAL REFINEMENT ==========
       
-      await this.updateJobProgress(jobId, 'processing', 0.8, 'Finding frame-perfect matches...');
-      const matches = this.matchSourceToTarget(sourceHashes, targetHashes);
+      await this.updateJobProgress(jobId, 'processing', 0.8, 'Matching with confidence scoring...');
       
-      console.log(`\n📊 Frame-Perfect Matching Results:`);
-      console.log(`   Found ${matches.length} matches`);
+      const uncertainMatches: Array<{
+        comment: FrameioComment;
+        sourceHash: FrameHash;
+        result: MatchResult;
+      }> = [];
+      const certainMatches: CommentMatch[] = [];
+      let skippedCount = 0;
       
-      // Convert to final format with frame numbers
-      const finalMatches: CommentMatch[] = matches.map(match => {
-        // Convert timestamp to frame number for Frame.io API
-        const targetFrameNumber = Math.round(match.targetTimestamp * targetMetadata.fps);
+      // Phase 3a: Initial confidence-based matching
+      console.log(`\n📊 Phase 3a: Confidence-Based Matching`);
+      for (let i = 0; i < sourceComments.length; i++) {
+        const comment = sourceComments[i];
+        const sourceHash = sourceHashes[i];
         
-        console.log(`  Comment "${match.sourceComment.text?.substring(0, 50)}..."`);
-        console.log(`    Source: frame ${match.sourceComment.timestamp}`);
-        console.log(`    Match: ${match.targetTimestamp.toFixed(2)}s → frame ${targetFrameNumber} (${(match.similarity * 100).toFixed(1)}% similarity)`);
+        const matchResult = matchWithConfidence(sourceHash, targetHashes);
         
-        return {
-          sourceComment: match.sourceComment,
-          targetFrameNumber,
-          targetTimestamp: match.targetTimestamp,
-          hammingDistance: match.hammingDistance,
-          similarity: match.similarity,
-        };
-      });
+        if (matchResult.action === 'skip') {
+          console.log(`⏭️  Skipping "${comment.text?.substring(0, 40)}..." - ${matchResult.reason}`);
+          skippedCount++;
+          continue;
+        }
+        
+        if (matchResult.action === 'needs_refinement') {
+          uncertainMatches.push({ comment, sourceHash, result: matchResult });
+        } else if (matchResult.action === 'transfer') {
+          // High or low confidence match, transfer immediately
+          const targetFrameNumber = matchResult.targetFrame!;
+          const targetHash = targetHashes.find(h => h.frameNumber === targetFrameNumber);
+          const distance = hammingDistance(sourceHash.hash, targetHash!.hash);
+          
+          certainMatches.push({
+            sourceComment: comment,
+            targetFrameNumber,
+            targetTimestamp: targetHash!.timestamp!,
+            hammingDistance: distance,
+            similarity: 1 - (distance / 1024),
+            confidence: matchResult.confidence as 'high' | 'low', // Type assertion safe here since action === 'transfer'
+            reason: matchResult.reason,
+          });
+        }
+      }
+      
+      console.log(`\n✓ ${certainMatches.length} high/low-confidence matches`);
+      console.log(`~ ${uncertainMatches.length} need temporal refinement`);
+      console.log(`⏭ ${skippedCount} skipped (no match found)\n`);
+      
+      // Phase 3b: Temporal refinement for uncertain matches
+      if (uncertainMatches.length > 0) {
+        console.log(`📊 Phase 3b: Temporal Neighbor Refinement`);
+        await this.updateJobProgress(jobId, 'processing', 0.85, `Refining ${uncertainMatches.length} uncertain matches...`);
+        
+        // Extract all neighbor frames in one batch (more efficient)
+        const allNeighborFrames: number[] = [];
+        uncertainMatches.forEach(m => {
+          const frameNum = m.comment.timestamp!;
+          allNeighborFrames.push(frameNum - 5, frameNum - 1, frameNum, frameNum + 1, frameNum + 5);
+        });
+        
+        console.log(`🔍 Extracting ${allNeighborFrames.length} neighbor frames for refinement...`);
+        const allNeighborData = await extractFramesWithSeeking(
+          sourceVideoUrl,
+          allNeighborFrames,
+          sourceMetadata.fps,
+          8 // More parallel since batching
+        );
+        
+        const allNeighborHashes = await generateFrameHashes(allNeighborData);
+        
+        // Refine each uncertain match
+        for (let i = 0; i < uncertainMatches.length; i++) {
+          const uncertain = uncertainMatches[i];
+          const neighborHashes = allNeighborHashes.slice(i * 5, (i + 1) * 5);
+          
+          const refined = refineWithNeighbors(
+            neighborHashes,
+            uncertain.result.candidates!,
+            targetHashes
+          );
+          
+          if (refined.action === 'transfer') {
+            const targetHash = targetHashes.find(h => h.frameNumber === refined.targetFrame!);
+            const distance = hammingDistance(uncertain.sourceHash.hash, targetHash!.hash);
+            
+            certainMatches.push({
+              sourceComment: uncertain.comment,
+              targetFrameNumber: refined.targetFrame!,
+              targetTimestamp: targetHash!.timestamp!,
+              hammingDistance: distance,
+              similarity: 1 - (distance / 1024),
+              confidence: refined.confidence as 'high' | 'medium' | 'low', // Type assertion safe since action === 'transfer'
+              reason: refined.reason,
+            });
+            
+            console.log(`  ✓ Refined "${uncertain.comment.text?.substring(0, 40)}..." → ${refined.confidence} confidence`);
+          }
+        }
+        console.log(`\n✅ Refinement complete: ${certainMatches.length} total matches\n`);
+      }
+      
+      // Final results
+      console.log(`\n📊 Final Matching Results:`);
+      console.log(`   Total matched: ${certainMatches.length}`);
+      console.log(`   High confidence: ${certainMatches.filter(m => m.confidence === 'high').length}`);
+      console.log(`   Medium confidence: ${certainMatches.filter(m => m.confidence === 'medium').length}`);
+      console.log(`   Low confidence: ${certainMatches.filter(m => m.confidence === 'low').length}`);
+      console.log(`   Skipped: ${skippedCount}\n`);
 
-      await this.updateJobProgress(jobId, 'processing', 0.9, `Matched ${finalMatches.length} comments`);
-      console.log(`\n✅ Frame processing complete: ${finalMatches.length} matches found\n`);
+      await this.updateJobProgress(jobId, 'processing', 0.9, `Matched ${certainMatches.length} comments`);
+      console.log(`✅ Frame processing complete: ${certainMatches.length} matches found\n`);
       
-      return finalMatches;
+      return certainMatches;
 
     } catch (error) {
       console.error('❌ Video processing failed:', error);
