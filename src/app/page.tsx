@@ -140,8 +140,25 @@ function UnauthenticatedView() {
   );
 }
 
+interface Job {
+  id: string;
+  status: string;
+  progress: string | null;
+  message: string | null;
+  sourceFileName: string;
+  targetFileName: string;
+  commentsCount: number;
+  matchesFound: number;
+  commentsTransferred: number;
+  createdAt: Date | null;
+  completedAt: string | null;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function AuthenticatedView({ user }: { user: User }) {
   const [webhookUrl, setWebhookUrl] = useState<string>('');
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [loadingJobs, setLoadingJobs] = useState(true);
 
   useEffect(() => {
     // Get the current webhook URL dynamically
@@ -150,116 +167,158 @@ function AuthenticatedView({ user }: { user: User }) {
     }
   }, []);
 
+  useEffect(() => {
+    // Fetch jobs for this user
+    const fetchJobs = async () => {
+      try {
+        const response = await fetch('/api/jobs');
+        if (response.ok) {
+          const data = await response.json();
+          setJobs(data.jobs);
+        }
+      } catch (error) {
+        console.error('Failed to fetch jobs:', error);
+      } finally {
+        setLoadingJobs(false);
+      }
+    };
+
+    fetchJobs();
+    // Refresh every 10 seconds
+    const interval = setInterval(fetchJobs, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const getStatusBadge = (status: string) => {
+    const badges: Record<string, string> = {
+      pending: 'bg-gray-100 text-gray-800',
+      processing: 'bg-blue-100 text-blue-800',
+      completed: 'bg-green-100 text-green-800',
+      completed_with_errors: 'bg-yellow-100 text-yellow-800',
+      failed: 'bg-red-100 text-red-800',
+    };
+    return badges[status] || 'bg-gray-100 text-gray-800';
+  };
+
+  const formatDate = (date: Date | null | string) => {
+    if (!date) return 'N/A';
+    const d = new Date(date);
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    }).format(d);
+  };
+
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="bg-white rounded-lg shadow-lg p-8">
-        <div className="mb-8">
-          <h2 className="text-3xl font-bold text-gray-900 mb-4">
-            Welcome back, {user.name}!
-          </h2>
-          <p className="text-gray-600">
-            You&apos;re authenticated with Frame.io. The comment versioning system is ready to use.
-          </p>
+    <div className="max-w-7xl mx-auto">
+      {/* Webhook URL Card */}
+      <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-3">🔗 Webhook URL</h3>
+        <div className="flex items-center gap-3">
+          <code className="flex-1 bg-gray-50 rounded-lg border border-gray-200 px-4 py-3 text-sm font-mono text-gray-800 break-all">
+            {webhookUrl || 'Loading...'}
+          </code>
+          <button
+            onClick={() => {
+              if (webhookUrl) {
+                navigator.clipboard.writeText(webhookUrl);
+                alert('Webhook URL copied to clipboard!');
+              }
+            }}
+            disabled={!webhookUrl}
+            className="inline-flex items-center px-4 py-3 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+          >
+            📋 Copy
+          </button>
         </div>
+      </div>
 
-        <div className="grid md:grid-cols-2 gap-8">
-          <div className="bg-blue-50 rounded-lg p-6">
-            <h3 className="text-xl font-semibold text-gray-900 mb-4">Phase 2 Complete ✅</h3>
-            <ul className="space-y-2 text-gray-700">
-              <li className="flex items-center">
-                <svg className="w-5 h-5 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                </svg>
-                Adobe OAuth 2.0 Authentication
-              </li>
-              <li className="flex items-center">
-                <svg className="w-5 h-5 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                </svg>
-                PKCE Security Flow
-              </li>
-              <li className="flex items-center">
-                <svg className="w-5 h-5 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                </svg>
-                Frame.io API Client
-              </li>
-              <li className="flex items-center">
-                <svg className="w-5 h-5 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                </svg>
-                Secure Token Management
-              </li>
-            </ul>
+      {/* Job History Table */}
+      <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-900">Job History</h3>
+        </div>
+        
+        {loadingJobs ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
           </div>
-
-          <div className="bg-gray-50 rounded-lg p-6">
-            <h3 className="text-xl font-semibold text-gray-900 mb-4">Next Steps</h3>
-            <ul className="space-y-2 text-gray-700">
-              <li className="flex items-center">
-                <svg className="w-5 h-5 text-gray-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-                Video Processing Engine
-              </li>
-              <li className="flex items-center">
-                <svg className="w-5 h-5 text-gray-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-                AI Embeddings & Matching
-              </li>
-              <li className="flex items-center">
-                <svg className="w-5 h-5 text-gray-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-                Comment Transfer System
-              </li>
-              <li className="flex items-center">
-                <svg className="w-5 h-5 text-gray-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-                Custom Actions Integration
-              </li>
-            </ul>
+        ) : jobs.length === 0 ? (
+          <div className="text-center py-12 text-gray-500">
+            No jobs yet. Trigger a comment transfer from Frame.io to get started.
           </div>
-        </div>
-
-        <div className="mt-8 bg-blue-50 border border-blue-200 rounded-lg p-6">
-          <h4 className="font-semibold text-blue-800 mb-4">🔗 Webhook Configuration</h4>
-          <p className="text-blue-700 mb-3">
-            Use this URL in your Frame.io Custom Action configuration:
-          </p>
-          <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
-            <div className="flex items-center justify-between">
-              <code className="text-sm font-mono text-gray-800 break-all flex-1 mr-4">
-                {webhookUrl || 'Loading webhook URL...'}
-              </code>
-              <button
-                onClick={() => {
-                  if (webhookUrl) {
-                    navigator.clipboard.writeText(webhookUrl);
-                    alert('Webhook URL copied to clipboard!');
-                  }
-                }}
-                disabled={!webhookUrl}
-                className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                📋 Copy URL
-              </button>
-            </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Source → Target
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Comments
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Results
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Started
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Message
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {jobs.map((job) => (
+                  <tr key={job.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadge(job.status)}`}>
+                        {job.status === 'processing' && (
+                          <svg className="animate-spin -ml-0.5 mr-1.5 h-3 w-3" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        )}
+                        {job.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm text-gray-900 font-medium truncate max-w-xs" title={job.sourceFileName}>
+                        {job.sourceFileName}
+                      </div>
+                      <div className="text-xs text-gray-500">→</div>
+                      <div className="text-sm text-gray-600 truncate max-w-xs" title={job.targetFileName}>
+                        {job.targetFileName}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {job.commentsCount}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {job.status === 'completed' || job.status === 'completed_with_errors' ? (
+                        <span className="text-green-600 font-medium">{job.commentsTransferred} transferred</span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {formatDate(job.createdAt)}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-500 max-w-md truncate">
+                      {job.message || '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <p className="text-sm text-blue-600">
-            💡 <strong>Tip:</strong> This URL updates automatically with each deployment. 
-            The form callback is working - you&apos;ll see an interactive form when triggering the custom action.
-          </p>
-        </div>
-
-        <div className="mt-8 bg-green-50 border border-green-200 rounded-lg p-6">
-          <h4 className="font-semibold text-green-800 mb-2">🎉 Authentication Setup Complete!</h4>
-          <p className="text-green-700">
-            Your Frame.io authentication is working perfectly. Ready to move on to Phase 3: Video Processing.
-          </p>
-        </div>
+        )}
       </div>
     </div>
   );

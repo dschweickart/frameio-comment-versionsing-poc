@@ -284,8 +284,7 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
             userEmail: payload.user?.email,
             status: 'pending',
             metadata: JSON.stringify({
-              sensitivity: payload.data.fuzzy_matches === 'true' ? 'low' : 'medium',
-              fuzzyMatches: payload.data.fuzzy_matches === 'true',
+              sensitivity: 'medium', // 80% similarity threshold (default)
               sourceFileName,
               targetFileName,
               sourceCommentsCount: sourceComments.length,
@@ -382,12 +381,6 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
                 name: `v${index + 1} - ${truncateMiddle(sf.name)}`,
                 value: sf.id
               }))
-            },
-            {
-              type: "boolean",
-              label: "Allow fuzzy matches",
-              name: "fuzzy_matches",
-              value: "false"
             }
           ]
         };
