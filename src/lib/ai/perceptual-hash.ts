@@ -193,6 +193,8 @@ export function matchWithConfidence(
         return currDiff < prevDiff ? curr : prev;
       });
       
+      console.log(`🖤 Black frame match: source@${sourceTimestamp.toFixed(1)}s found ${identicalBlacks.length} identical blacks, chose frame ${preferredMatch.frame}@${preferredMatch.timestamp.toFixed(1)}s (temporal preference)`);
+      
       return {
         action: 'transfer',
         targetFrame: preferredMatch.frame,

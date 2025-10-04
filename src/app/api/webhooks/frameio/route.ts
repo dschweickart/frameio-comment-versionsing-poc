@@ -144,16 +144,10 @@ export async function POST(request: NextRequest) {
     const timestamp = request.headers.get('x-frameio-request-timestamp') || '';
     const webhookSecret = process.env.FRAMEIO_WEBHOOK_SECRET || process.env.ACTION_SECRET || '';
     
-    // Debug logging for signature verification
-    console.log('🔐 Webhook signature debug:', {
-      hasSignature: !!signature,
-      signatureLength: signature.length,
-      hasTimestamp: !!timestamp,
-      timestamp: timestamp,
-      hasSecret: !!webhookSecret,
-      secretLength: webhookSecret.length,
-      signaturePreview: signature.substring(0, 20) + '...',
-    });
+    // Minimal signature verification logging
+    if (!webhookSecret || !signature || !timestamp) {
+      console.log('⚠️  Webhook signature verification skipped (missing credentials)');
+    }
     
     // Verify webhook signature if secret is configured (currently optional for POC)
     // TODO: For production, make this required and implement multi-tenant secret storage
@@ -161,14 +155,10 @@ export async function POST(request: NextRequest) {
     if (webhookSecret && signature && timestamp) {
       isVerified = verifyWebhookSignature(body, signature, timestamp, webhookSecret);
       if (!isVerified) {
-        console.warn('⚠️  Webhook signature verification failed - processing anyway (POC mode)');
+        console.warn('⚠️  Signature verification failed - processing anyway (POC mode)');
         // For production, uncomment this to reject invalid signatures:
         // return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
-      } else {
-        console.log('✅ Webhook signature verified');
       }
-    } else {
-      console.warn('⚠️  Webhook signature verification skipped (missing secret, signature, or timestamp)');
     }
     
     // Parse the payload
@@ -176,62 +166,21 @@ export async function POST(request: NextRequest) {
     
     // Console log the webhook for debugging
     const eventType = payload.type || payload.event; // Frame.io sends "type" for Custom Actions
-    const logData = {
-      event: eventType,
-      resourceType: payload.resource?.type,
-      resourceId: payload.resource?.id,
-      userId: payload.user?.id,
-      userName: payload.user?.name,
-      accountId: payload.account?.id || payload.account_id,
-      accountName: payload.account?.name,
-      verified: isVerified,
-      timestamp: new Date().toISOString(),
-      fullPayload: payload, // Full payload for debugging
-    };
+    console.log(`🎯 Webhook: ${eventType} | ${payload.resource?.type}:${payload.resource?.id?.substring(0, 8)} | interaction:${payload.interaction_id?.substring(0, 8)}`);
     
-    console.log('🎯 FRAME.IO WEBHOOK RECEIVED:', logData);
-    
-    // Also log to our debug endpoint (fire-and-forget, don't block webhook response)
-    fetch(`${request.nextUrl.origin}/api/debug/logs`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: '🎯 FRAME.IO WEBHOOK RECEIVED',
-        data: logData
-      })
-    }).catch(() => {
-      // Silent fail for debug logging
-    });
     
     // Handle different webhook events
     const response = await handleWebhookEvent(payload);
     
     // If handler returns a response (form or message), send it back
     if (response) {
-      console.log('📤 Sending response to Frame.io:', response);
-      
-      // Add debug info to response
-      return NextResponse.json({
-        ...response,
-        debug: {
-          webhook_received: true,
-          event: eventType,
-          timestamp: new Date().toISOString(),
-          logs_working: 'Console logs should appear in Vercel dashboard'
-        }
-      });
+      return NextResponse.json(response);
     }
     
     // Default success response
     return NextResponse.json({ 
       success: true, 
-      message: 'Webhook processed successfully',
-      event: eventType,
-      timestamp: new Date().toISOString(),
-      debug: {
-        webhook_received: true,
-        logs_working: 'Console logs should appear in Vercel dashboard'
-      }
+      message: 'Webhook processed successfully'
     });
     
   } catch (error) {
@@ -252,14 +201,6 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
   const eventType = payload.type || payload.event; // Frame.io sends "type" for Custom Actions
   switch (eventType) {
     case 'custom_action.triggered':
-      const actionLog = {
-        actionId: payload.resource?.id,
-        resourceType: payload.resource?.type,
-        user: payload.user?.name,
-        interactionId: payload.interaction_id,
-      };
-      
-      console.log('🚀 Custom Action Triggered:', actionLog);
       
       // Check if this is a form submission (has data field)
       if (payload.data) {
@@ -322,7 +263,7 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
           });
           
           if (existingJob) {
-            console.log(`⚠️  Job already exists for interaction ${payload.interaction_id} (status: ${existingJob.status})`);
+            console.log(`⚠️  Duplicate request detected (interaction: ${payload.interaction_id?.substring(0, 8)}, status: ${existingJob.status})`);
             return {
               title: existingJob.status === 'completed' ? "Already Processed ✓" : "Processing... ⏳",
               description: existingJob.status === 'completed' 
@@ -354,7 +295,7 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
           };
           
           const [job] = await db.insert(processingJobs).values(newJob).returning();
-          console.log(`✅ Processing job created: ${job.id} (interaction: ${payload.interaction_id}) with ${sourceComments.length} comments to transfer`);
+          console.log(`✅ Job created: ${job.id.substring(0, 8)} | ${sourceComments.length} comments | interaction: ${payload.interaction_id?.substring(0, 8)}`);
           
           // Trigger job processing asynchronously (don't await - let it run in background)
           processJob(job.id).catch((error) => {
@@ -380,15 +321,6 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
         const accountId = payload.account?.id || payload.account_id;
         const fileId = payload.resource?.id;
         
-        console.log('🔍 Custom action debug:', {
-          accountId,
-          fileId,
-          hasAccount: !!payload.account,
-          accountIdDirect: payload.account_id,
-          accountObject: payload.account,
-          hasData: !!payload.data
-        });
-        
         if (!accountId || !fileId) {
           return {
             title: "Error ❌",
@@ -396,69 +328,18 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
           };
         }
         
-        // If form was already submitted, process the job
-        if (payload.data?.source_file_id) {
-          console.log('📝 Form submitted, processing job...');
-          // Job processing logic will be here
-          const sourceFileId = payload.data.source_file_id as string;
-          const fuzzyMatches = payload.data.fuzzy_matches === 'true' || payload.data.fuzzy_matches === true;
-          
-          console.log(`🚀 Starting job: source=${sourceFileId}, target=${fileId}, fuzzy=${fuzzyMatches}`);
-          
-          // Create Frame.io client from stored tokens
-          const client = await FrameioClient.fromAccountId(accountId);
-          if (!client) {
-            return {
-              title: "Authentication Required ❌",
-              description: "Please sign in to the application first."
-            };
-          }
-          
-          // Create processing job
-          const jobData: NewProcessingJob = {
-            accountId,
-            sourceFileId,
-            targetFileId: fileId,
-            status: 'pending',
-            metadata: JSON.stringify({
-              fuzzyMatches,
-              initiatedBy: payload.user?.id,
-              interactionId: payload.interaction_id
-            })
-          };
-          
-          const [job] = await db.insert(processingJobs).values(jobData).returning();
-          console.log(`✅ Job created: ${job.id}`);
-          
-          // Start processing asynchronously (don't await)
-          processJob(job.id).catch(err => {
-            console.error(`❌ Job ${job.id} failed:`, err);
-          });
-          
-          return {
-            title: "Processing Started ✓",
-            description: "Matching comment job submitted. This may take a few minutes for longer videos."
-          };
-        }
-        
         // Initial request - fetch version stack and show form
-        console.log('🔑 Looking for tokens with account_id:', accountId);
         const client = await FrameioClient.fromAccountId(accountId);
         
         if (!client) {
-          console.error(`❌ No tokens found for account_id: ${accountId}`);
           return {
             title: "Authentication Required ❌",
-            description: `Please sign in to the application first. (Searched for account: ${accountId})`
+            description: `Please sign in to the application first. (Account: ${accountId?.substring(0, 8)})`
           };
         }
         
-        console.log('✅ Client created successfully from stored tokens');
-        
         // Get file details
-        console.log('⏱️  Fetching file details...');
         const file = await client.getFile(accountId, fileId);
-        console.log(`✅ File fetched: ${file.name}`);
         
         if (!file.parent_id) {
           return {
@@ -468,9 +349,7 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
         }
         
         // List version stack children (siblings)
-        console.log('⏱️  Fetching version stack children...');
         const allVersions = await client.listVersionStackChildren(accountId, file.parent_id);
-        console.log(`✅ Found ${allVersions.length} versions in stack`);
         
         // Filter out the target file to get source options
         const sourceFiles = allVersions.filter(v => v.id !== fileId && v.status === 'transcoded');

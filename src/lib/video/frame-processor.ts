@@ -326,7 +326,7 @@ export class FrameProcessor {
       let skippedCount = 0;
       
       // Phase 3a: Initial confidence-based matching
-      console.log(`\n📊 Phase 3a: Confidence-Based Matching`);
+      console.log(`\n📊 Phase 3a: Confidence-Based Matching (${sourceComments.length} comments)`);
       for (let i = 0; i < sourceComments.length; i++) {
         const comment = sourceComments[i];
         const sourceHash = sourceHashes[i];
@@ -340,7 +340,6 @@ export class FrameProcessor {
         }
         
         if (matchResult.action === 'needs_refinement') {
-          console.log(`~  Refine "${comment.text?.substring(0, 30)}..." - ${matchResult.reason}`);
           uncertainMatches.push({ comment, sourceHash, result: matchResult });
         } else if (matchResult.action === 'transfer') {
           // High or low confidence match, transfer immediately
@@ -349,8 +348,7 @@ export class FrameProcessor {
           const distance = hammingDistance(sourceHash.hash, targetHash!.hash);
           const similarity = 1 - (distance / 1024);
           
-          console.log(`${matchResult.confidence === 'high' ? '✓' : '?'}  Match "${comment.text?.substring(0, 30)}..." → frame ${targetFrameNumber} (${(similarity * 100).toFixed(1)}% sim, ${matchResult.confidence})`);
-          console.log(`   Source Frame.io frame ${comment.timestamp} → Target frame ${targetFrameNumber} @ ${targetHash!.timestamp!.toFixed(3)}s`);
+          console.log(`${matchResult.confidence === 'high' ? '✓' : '?'}  "${comment.text?.substring(0, 30)}..." F.io#${comment.timestamp} → target#${targetFrameNumber}@${targetHash!.timestamp!.toFixed(2)}s (${(similarity * 100).toFixed(1)}% ${matchResult.confidence})`);
           
           certainMatches.push({
             sourceComment: comment,
@@ -364,13 +362,11 @@ export class FrameProcessor {
         }
       }
       
-      console.log(`\n✓ ${certainMatches.length} high/low-confidence matches`);
-      console.log(`~ ${uncertainMatches.length} need temporal refinement`);
-      console.log(`⏭ ${skippedCount} skipped (no match found)\n`);
+      console.log(`\n✅ Phase 3a Complete: ${certainMatches.length} certain | ${uncertainMatches.length} uncertain | ${skippedCount} skipped\n`);
       
       // Phase 3b: Temporal refinement for uncertain matches
       if (uncertainMatches.length > 0) {
-        console.log(`📊 Phase 3b: Temporal Neighbor Refinement`);
+        console.log(`📊 Phase 3b: Temporal Refinement (${uncertainMatches.length} comments)`);
         await this.updateJobProgress(jobId, 'processing', 0.85, `Refining ${uncertainMatches.length} uncertain matches...`);
         
         // Extract all neighbor frames in one batch (more efficient)
@@ -380,7 +376,6 @@ export class FrameProcessor {
           allNeighborFrames.push(frameNum - 5, frameNum - 1, frameNum, frameNum + 1, frameNum + 5);
         });
         
-        console.log(`🔍 Extracting ${allNeighborFrames.length} neighbor frames for refinement...`);
         const allNeighborData = await extractFramesWithSeeking(
           sourceVideoUrl,
           allNeighborFrames,
@@ -417,11 +412,10 @@ export class FrameProcessor {
               reason: refined.reason,
             });
             
-            console.log(`  ${emoji} Refined "${uncertain.comment.text?.substring(0, 30)}..." → frame ${refined.targetFrame} (${(similarity * 100).toFixed(1)}% sim, ${refined.confidence} - ${refined.reason})`);
-            console.log(`   Source Frame.io frame ${uncertain.comment.timestamp} → Target frame ${refined.targetFrame} @ ${targetHash!.timestamp!.toFixed(3)}s`);
+            console.log(`  ${emoji} Refined "${uncertain.comment.text?.substring(0, 30)}..." F.io#${uncertain.comment.timestamp} → target#${refined.targetFrame}@${targetHash!.timestamp!.toFixed(2)}s (${(similarity * 100).toFixed(1)}% ${refined.confidence})`);
           }
         }
-        console.log(`\n✅ Refinement complete: ${certainMatches.length} total matches\n`);
+        console.log(`\n✅ Phase 3b Complete: ${certainMatches.length} total matches\n`);
       }
       
       // Final results

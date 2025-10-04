@@ -52,19 +52,9 @@ export class CommentTransfer {
 
     const BATCH_SIZE = 10; // Frame.io rate limit: 10 calls per minute
     const RATE_LIMIT_DELAY_MS = 60000; // Wait 60 seconds between batches
-
-    console.log(`\n🚀 Starting comment transfer to file ${targetFileId}`);
-    console.log(`   Similarity threshold: ${(minSimilarity * 100).toFixed(0)}%`);
-    console.log(`   Total matches: ${matches.length}`);
-    console.log(`   Batch size: ${BATCH_SIZE} (Frame.io rate limit: 10/min)`);
-    
     const totalBatches = Math.ceil(matches.length / BATCH_SIZE);
-    if (totalBatches > 1) {
-      const estimatedTime = totalBatches * RATE_LIMIT_DELAY_MS / 1000;
-      console.log(`   Estimated time: ~${Math.ceil(estimatedTime / 60)} minutes (${totalBatches} batches)\n`);
-    } else {
-      console.log('');
-    }
+
+    console.log(`\n🚀 Comment Transfer: ${matches.length} comments, ${totalBatches} batches, ~${totalBatches} min\n`);
 
     const details: TransferDetail[] = [];
     let transferred = 0;
@@ -124,11 +114,9 @@ export class CommentTransfer {
 
       try {
         console.log(
-          `📝 Transferring comment: "${commentText.substring(0, 50)}..." ` +
-          `(${(similarity * 100).toFixed(1)}% match, ${confidence} confidence) ` +
-          `to frame ${matchedFrameNumber} (${targetTimestamp.toFixed(2)}s)`
+          `📝 Transferring: "${commentText.substring(0, 40)}..." @ frame ${matchedFrameNumber} ` +
+          `(${(similarity * 100).toFixed(1)}% ${confidence}) → API sends ${frameNumber} (Frame.io n-1 bug fix)`
         );
-        console.log(`   Frame.io API: matched frame ${matchedFrameNumber} → sending ${frameNumber} (compensate for Frame.io n-1 bug)`);
 
         const commentData = {
           text: commentText,
@@ -143,8 +131,6 @@ export class CommentTransfer {
           targetFileId,
           commentData
         );
-
-        console.log(`✅ Comment transferred successfully (ID: ${newComment.id})`);
 
         details.push({
           sourceComment,
@@ -172,20 +158,16 @@ export class CommentTransfer {
     }
 
       // End of batch summary
-      console.log(`   Batch ${batchIndex + 1} complete: ✅ ${transferred} transferred, ❌ ${failed} failed, ⏭️  ${skipped} skipped`);
+      console.log(`   Batch ${batchIndex + 1}/${totalBatches}: ✅ ${transferred} | ⏭️  ${skipped} | ❌ ${failed}`);
 
       // Wait 60 seconds before next batch (respect Frame.io rate limit)
       if (batchIndex < totalBatches - 1) {
-        console.log(`   ⏳ Waiting ${RATE_LIMIT_DELAY_MS / 1000}s for rate limit reset...`);
+        console.log(`   ⏳ Rate limit cooldown: ${RATE_LIMIT_DELAY_MS / 1000}s...`);
         await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_DELAY_MS));
       }
     }
 
-    console.log(`\n📊 Transfer Summary:`);
-    console.log(`   ✅ Transferred: ${transferred}`);
-    console.log(`   ⏭️  Skipped: ${skipped}`);
-    console.log(`   ❌ Failed: ${failed}`);
-    console.log(`   📝 Total: ${matches.length}\n`);
+    console.log(`\n📊 Transfer Complete: ✅ ${transferred} | ⏭️  ${skipped} | ❌ ${failed}\n`);
 
     return {
       success: failed === 0,
