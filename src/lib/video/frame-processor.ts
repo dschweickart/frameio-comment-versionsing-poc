@@ -330,25 +330,29 @@ export class FrameProcessor {
         const matchResult = matchWithConfidence(sourceHash, targetHashes);
         
         if (matchResult.action === 'skip') {
-          console.log(`⏭️  Skipping "${comment.text?.substring(0, 40)}..." - ${matchResult.reason}`);
+          console.log(`⏭️  Skip "${comment.text?.substring(0, 30)}..." - ${matchResult.reason}`);
           skippedCount++;
           continue;
         }
         
         if (matchResult.action === 'needs_refinement') {
+          console.log(`~  Refine "${comment.text?.substring(0, 30)}..." - ${matchResult.reason}`);
           uncertainMatches.push({ comment, sourceHash, result: matchResult });
         } else if (matchResult.action === 'transfer') {
           // High or low confidence match, transfer immediately
           const targetFrameNumber = matchResult.targetFrame!;
           const targetHash = targetHashes.find(h => h.frameNumber === targetFrameNumber);
           const distance = hammingDistance(sourceHash.hash, targetHash!.hash);
+          const similarity = 1 - (distance / 1024);
+          
+          console.log(`${matchResult.confidence === 'high' ? '✓' : '?'}  Match "${comment.text?.substring(0, 30)}..." → frame ${targetFrameNumber} (${(similarity * 100).toFixed(1)}% sim, ${matchResult.confidence})`);
           
           certainMatches.push({
             sourceComment: comment,
             targetFrameNumber,
             targetTimestamp: targetHash!.timestamp!,
             hammingDistance: distance,
-            similarity: 1 - (distance / 1024),
+            similarity,
             confidence: matchResult.confidence as 'high' | 'low', // Type assertion safe here since action === 'transfer'
             reason: matchResult.reason,
           });
@@ -395,18 +399,20 @@ export class FrameProcessor {
           if (refined.action === 'transfer') {
             const targetHash = targetHashes.find(h => h.frameNumber === refined.targetFrame!);
             const distance = hammingDistance(uncertain.sourceHash.hash, targetHash!.hash);
+            const similarity = 1 - (distance / 1024);
+            const emoji = refined.confidence === 'high' ? '✓' : refined.confidence === 'medium' ? '~' : '?';
             
             certainMatches.push({
               sourceComment: uncertain.comment,
               targetFrameNumber: refined.targetFrame!,
               targetTimestamp: targetHash!.timestamp!,
               hammingDistance: distance,
-              similarity: 1 - (distance / 1024),
+              similarity,
               confidence: refined.confidence as 'high' | 'medium' | 'low', // Type assertion safe since action === 'transfer'
               reason: refined.reason,
             });
             
-            console.log(`  ✓ Refined "${uncertain.comment.text?.substring(0, 40)}..." → ${refined.confidence} confidence`);
+            console.log(`  ${emoji} Refined "${uncertain.comment.text?.substring(0, 30)}..." → frame ${refined.targetFrame} (${(similarity * 100).toFixed(1)}% sim, ${refined.confidence} - ${refined.reason})`);
           }
         }
         console.log(`\n✅ Refinement complete: ${certainMatches.length} total matches\n`);

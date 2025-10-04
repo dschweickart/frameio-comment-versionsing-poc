@@ -157,37 +157,37 @@ export function matchWithConfidence(
   }
   
   // Clear winner - high confidence
-  // Gap of 80+ bits = significant difference between 1st and 2nd place
+  // Gap of 50+ bits = significant difference between 1st and 2nd place (about 5% difference)
   const gap = second.distance - best.distance;
-  if (gap >= 80) {
+  if (gap >= 50) {
     return {
       action: 'transfer',
       targetFrame: best.frame,
       confidence: 'high',
-      reason: `clear_best_match (${(1 - best.distance / 1024).toFixed(2)} sim, gap: ${gap})`
+      reason: `clear_winner (${(1 - best.distance / 1024).toFixed(3)} sim, ${gap} bit gap)`
     };
   }
   
-  // Multiple close candidates (within 80 bits)
-  const closeMatches = sorted.filter(m => m.distance - best.distance < 80);
+  // Multiple close candidates (within 50 bits)
+  const closeMatches = sorted.filter(m => m.distance - best.distance < 50);
   
   // Too many candidates = genuinely ambiguous content
   // Accept best match with low confidence
-  if (closeMatches.length > 20) {
+  if (closeMatches.length > 15) {
     return {
       action: 'transfer',
       targetFrame: best.frame,
       confidence: 'low',
-      reason: `ambiguous_content_${closeMatches.length}_similar_frames`
+      reason: `ambiguous_${closeMatches.length}_similar_frames (${(1 - best.distance / 1024).toFixed(3)} sim)`
     };
   }
   
-  // 2-20 candidates: needs refinement with temporal context
+  // 2-15 candidates: needs refinement with temporal context
   return {
     action: 'needs_refinement',
     targetFrame: best.frame,
     confidence: 'medium',
-    reason: `multiple_candidates (${closeMatches.length} within 80 bits)`,
+    reason: `needs_refinement (${closeMatches.length} candidates within 50 bits)`,
     candidates: closeMatches.slice(0, 5)
   };
 }
@@ -238,32 +238,32 @@ export function refineWithNeighbors(
   const improvementGap = second.score - best.score;
   
   // Strong improvement after refinement
-  // 320+ bits across 5 frames = 64+ bits per frame on average
-  if (improvementGap >= 320) {
+  // 200+ bits across 5 frames = 40+ bits per frame on average
+  if (improvementGap >= 200) {
     return {
       action: 'transfer',
       targetFrame: best.frame,
       confidence: 'high',
-      reason: `refined_clear_winner (gap: ${improvementGap} bits)`
+      reason: `refined_strong (${improvementGap} bit gap)`
     };
   }
   
-  // Moderate improvement
-  if (improvementGap >= 160) {
+  // Moderate improvement - testing shows these are still accurate
+  if (improvementGap >= 80) {
     return {
       action: 'transfer',
       targetFrame: best.frame,
       confidence: 'medium',
-      reason: `refined_likely_match (gap: ${improvementGap} bits)`
+      reason: `refined_moderate (${improvementGap} bit gap)`
     };
   }
   
-  // Still ambiguous after refinement
+  // Small improvement - likely ambiguous content (static shots, similar frames)
   return {
     action: 'transfer',
     targetFrame: best.frame,
     confidence: 'low',
-    reason: `ambiguous_after_refinement (gap: ${improvementGap} bits)`
+    reason: `refined_weak (${improvementGap} bit gap)`
   };
 }
 

@@ -113,20 +113,19 @@ export class CommentTransfer {
         commentText = `[Transferred ${confidenceEmoji}] ${commentText}`;
       }
 
-      // Convert timestamp to frame number (Frame.io expects frame number starting from 1)
-      // Assuming 24fps (we should get actual FPS from video metadata in production)
-      const targetFrameNumber = Math.round(targetTimestamp * 24) + 1; // +1 because Frame.io starts at 1
+      // Use the targetFrameNumber from the match (already calculated with correct FPS)
+      const frameNumber = match.targetFrameNumber;
 
       try {
         console.log(
           `📝 Transferring comment: "${commentText.substring(0, 50)}..." ` +
-          `(${(similarity * 100).toFixed(1)}% match) ` +
-          `to frame ${targetFrameNumber} (${targetTimestamp.toFixed(2)}s)`
+          `(${(similarity * 100).toFixed(1)}% match, ${confidence} confidence) ` +
+          `to frame ${frameNumber} (${targetTimestamp.toFixed(2)}s)`
         );
 
         const commentData = {
           text: commentText,
-          timestamp: targetFrameNumber,
+          timestamp: frameNumber,
           // TODO: Transfer annotation data if present and transferAnnotations is true
           // annotation: transferAnnotations && sourceComment.annotation ? sourceComment.annotation : undefined,
         };

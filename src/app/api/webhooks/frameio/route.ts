@@ -316,6 +316,21 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
             console.log('⚠️  Could not fetch file names, using defaults');
           }
           
+          // Check for existing job with same interaction_id (idempotency for Frame.io retries)
+          const existingJob = await db.query.processingJobs.findFirst({
+            where: (jobs, { eq }) => eq(jobs.interactionId, payload.interaction_id!)
+          });
+          
+          if (existingJob) {
+            console.log(`⚠️  Job already exists for interaction ${payload.interaction_id} (status: ${existingJob.status})`);
+            return {
+              title: existingJob.status === 'completed' ? "Already Processed ✓" : "Processing... ⏳",
+              description: existingJob.status === 'completed' 
+                ? "This request has already been completed."
+                : "Your request is already being processed. Please wait."
+            };
+          }
+          
           const newJob: NewProcessingJob = {
             accountId,
             projectId: (payload.resource as { project_id?: string })?.project_id,
@@ -339,7 +354,7 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
           };
           
           const [job] = await db.insert(processingJobs).values(newJob).returning();
-          console.log(`✅ Processing job created: ${job.id} with ${sourceComments.length} comments to transfer`);
+          console.log(`✅ Processing job created: ${job.id} (interaction: ${payload.interaction_id}) with ${sourceComments.length} comments to transfer`);
           
           // Trigger job processing asynchronously (don't await - let it run in background)
           processJob(job.id).catch((error) => {
