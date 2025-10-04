@@ -23,8 +23,10 @@ export interface JobResult {
  * 5. Update job status with results
  */
 export async function processJob(jobId: string): Promise<JobResult> {
+  const startTime = Date.now();
+  
   console.log(`\n${'='.repeat(80)}`);
-  console.log(`🚀 STARTING JOB PROCESSING: ${jobId}`);
+  console.log(`🚀 STARTING JOB PROCESSING: ${jobId.substring(0, 8)}`);
   console.log(`${'='.repeat(80)}\n`);
 
   try {
@@ -37,16 +39,15 @@ export async function processJob(jobId: string): Promise<JobResult> {
       throw new Error(`Job not found: ${jobId}`);
     }
 
-    console.log(`📋 Job Details:`);
-    console.log(`   Account: ${job.accountId}`);
-    console.log(`   Source File: ${job.sourceFileId}`);
-    console.log(`   Target File: ${job.targetFileId}`);
-    console.log(`   User: ${job.userName} (${job.userEmail})`);
-
     const metadata = job.metadata 
       ? (typeof job.metadata === 'string' ? JSON.parse(job.metadata) : job.metadata)
       : {};
-    console.log(`   Source Comments: ${metadata.sourceCommentsCount || 0}`);
+
+    console.log(`📋 Job Details:`);
+    console.log(`   Source: ${metadata.sourceFileName || job.sourceFileId?.substring(0, 8)}`);
+    console.log(`   Target: ${metadata.targetFileName || job.targetFileId?.substring(0, 8)}`);
+    console.log(`   Comments to match: ${metadata.sourceCommentsCount || 0}`);
+    console.log(`   User: ${job.userName || 'Unknown'}`);
     console.log('');
 
     // Step 2: Create Frame.io client
@@ -77,11 +78,11 @@ export async function processJob(jobId: string): Promise<JobResult> {
     // Parse sensitivity from metadata (high/medium/low)
     const sensitivity = (metadata.sensitivity as 'high' | 'medium' | 'low') || 'medium';
     const sensitivityMap: Record<'high' | 'medium' | 'low', number> = {
-      high: 0.85,   // 85% similarity (5-10 bits different)
-      medium: 0.70, // 70% similarity (15-20 bits different)
-      low: 0.55,    // 55% similarity (25-30 bits different)
+      high: 0.90,   // 90% similarity (very strict, only near-perfect matches)
+      medium: 0.80, // 80% similarity (default, balanced)
+      low: 0.70,    // 70% similarity (more permissive)
     };
-    const minSimilarity = sensitivityMap[sensitivity] || 0.70;
+    const minSimilarity = sensitivityMap[sensitivity] || 0.80;
 
     console.log(`🎯 Similarity threshold: ${(minSimilarity * 100).toFixed(0)}% (${sensitivity} sensitivity)`);
 
@@ -93,6 +94,11 @@ export async function processJob(jobId: string): Promise<JobResult> {
     );
 
     // Step 5: Update job with results
+    const duration = Date.now() - startTime;
+    const minutes = Math.floor(duration / 60000);
+    const seconds = Math.floor((duration % 60000) / 1000);
+    const durationStr = minutes > 0 ? `${minutes}min ${seconds}sec` : `${seconds}sec`;
+    
     const finalMessage = transferResult.success
       ? `✅ Transferred ${transferResult.transferred} of ${matches.length} comments successfully`
       : `⚠️ Transferred ${transferResult.transferred}, failed ${transferResult.failed}, skipped ${transferResult.skipped}`;
@@ -110,7 +116,8 @@ export async function processJob(jobId: string): Promise<JobResult> {
     );
 
     console.log(`\n${'='.repeat(80)}`);
-    console.log(`✅ JOB COMPLETED: ${jobId}`);
+    console.log(`✅ JOB COMPLETED in ${durationStr}: ${jobId.substring(0, 8)}`);
+    console.log(`   Transferred: ${transferResult.transferred} | Skipped: ${transferResult.skipped} | Failed: ${transferResult.failed}`);
     console.log(`${'='.repeat(80)}\n`);
 
     return {

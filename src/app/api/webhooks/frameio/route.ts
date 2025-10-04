@@ -295,11 +295,18 @@ async function handleWebhookEvent(payload: FrameioWebhookPayload): Promise<FormC
           };
           
           const [job] = await db.insert(processingJobs).values(newJob).returning();
-          console.log(`✅ Job created: ${job.id.substring(0, 8)} | ${sourceComments.length} comments | interaction: ${payload.interaction_id?.substring(0, 8)}`);
+          
+          console.log(`\n${'='.repeat(80)}`);
+          console.log(`📝 JOB SUBMITTED: ${job.id.substring(0, 8)}`);
+          console.log(`   Source: ${sourceFileName}`);
+          console.log(`   Target: ${targetFileName}`);
+          console.log(`   Comments: ${sourceComments.length}`);
+          console.log(`   Interaction: ${payload.interaction_id?.substring(0, 8)}`);
+          console.log(`${'='.repeat(80)}\n`);
           
           // Trigger job processing asynchronously (don't await - let it run in background)
           processJob(job.id).catch((error) => {
-            console.error(`❌ Job ${job.id} processing failed:`, error);
+            console.error(`❌ Job ${job.id.substring(0, 8)} processing failed:`, error);
           });
           
           return {

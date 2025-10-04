@@ -45,7 +45,7 @@ export class CommentTransfer {
     options: TransferOptions = {}
   ): Promise<TransferResult> {
     const {
-      minSimilarity = 0.7, // 70% similarity threshold
+      minSimilarity = 0.8, // 80% similarity threshold (skip low confidence < 80%)
       // transferAnnotations = true, // TODO: Implement annotation transfer
       addPrefix = true,
     } = options;
