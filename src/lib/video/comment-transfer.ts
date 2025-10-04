@@ -122,6 +122,7 @@ export class CommentTransfer {
           `(${(similarity * 100).toFixed(1)}% match, ${confidence} confidence) ` +
           `to frame ${frameNumber} (${targetTimestamp.toFixed(2)}s)`
         );
+        console.log(`   🔍 TRANSFER DEBUG: Source Frame.io=${sourceComment.timestamp} → Sending to Frame.io API: ${frameNumber}`);
 
         const commentData = {
           text: commentText,

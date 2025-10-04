@@ -271,6 +271,9 @@ export class FrameProcessor {
         .filter(comment => comment.timestamp !== undefined)
         .map(comment => comment.timestamp!);
 
+      console.log(`\n🔍 SOURCE FRAMES DEBUG:`);
+      console.log(`   Comment timestamps from Frame.io API: [${commentFrameNumbers.slice(0, 5).join(', ')}${commentFrameNumbers.length > 5 ? '...' : ''}]`);
+
       const sourceFrameData = await extractFramesWithSeeking(
         sourceVideoUrl, 
         commentFrameNumbers,
@@ -308,6 +311,7 @@ export class FrameProcessor {
         1 // Extract every frame for maximum accuracy
       );
       console.log(`Extracted and hashed ${targetHashes.length} frames from target`);
+      console.log(`   Target frame range: ${targetHashes[0].frameNumber} to ${targetHashes[targetHashes.length - 1].frameNumber}`);
 
       // ========== PHASE 3: CONFIDENCE-BASED MATCHING WITH OPTIONAL REFINEMENT ==========
       
@@ -346,6 +350,7 @@ export class FrameProcessor {
           const similarity = 1 - (distance / 1024);
           
           console.log(`${matchResult.confidence === 'high' ? '✓' : '?'}  Match "${comment.text?.substring(0, 30)}..." → frame ${targetFrameNumber} (${(similarity * 100).toFixed(1)}% sim, ${matchResult.confidence})`);
+          console.log(`      DEBUG: Source Frame.io=${comment.timestamp} → Target internal=${targetFrameNumber} (timestamp=${targetHash!.timestamp!.toFixed(3)}s)`);
           
           certainMatches.push({
             sourceComment: comment,
@@ -413,6 +418,7 @@ export class FrameProcessor {
             });
             
             console.log(`  ${emoji} Refined "${uncertain.comment.text?.substring(0, 30)}..." → frame ${refined.targetFrame} (${(similarity * 100).toFixed(1)}% sim, ${refined.confidence} - ${refined.reason})`);
+            console.log(`      DEBUG: Source Frame.io=${uncertain.comment.timestamp} → Target internal=${refined.targetFrame} (timestamp=${targetHash!.timestamp!.toFixed(3)}s)`);
           }
         }
         console.log(`\n✅ Refinement complete: ${certainMatches.length} total matches\n`);
