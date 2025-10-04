@@ -107,15 +107,20 @@ function UnauthenticatedView() {
 interface Job {
   id: string;
   status: string;
-  progress: string | null;
+  progress: number;
+  progressPercent: number;
   message: string | null;
+  errorMessage: string | null;
   sourceFileName: string;
   targetFileName: string;
   commentsCount: number;
   matchesFound: number;
   commentsTransferred: number;
   createdAt: Date | null;
-  completedAt: string | null;
+  completedAt: Date | null;
+  duration: string | null;
+  accountId: string | null;
+  projectId: string | null;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -225,16 +230,13 @@ function AuthenticatedView({ user }: { user: User }) {
                     Source → Target
                   </th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Comments
+                    Progress
                   </th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Results
                   </th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Started
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Message
+                    Time
                   </th>
                 </tr>
               </thead>
@@ -251,6 +253,11 @@ function AuthenticatedView({ user }: { user: User }) {
                         )}
                         {job.status}
                       </span>
+                      {job.errorMessage && (
+                        <div className="text-xs text-red-600 mt-1 max-w-xs truncate" title={job.errorMessage}>
+                          {job.errorMessage}
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       <div className="text-sm text-gray-900 font-medium truncate max-w-xs" title={job.sourceFileName}>
@@ -261,21 +268,53 @@ function AuthenticatedView({ user }: { user: User }) {
                         {job.targetFileName}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {job.commentsCount}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {job.status === 'completed' || job.status === 'completed_with_errors' ? (
-                        <span className="text-green-600 font-medium">{job.commentsTransferred} transferred</span>
+                    <td className="px-6 py-4">
+                      {job.status === 'processing' ? (
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 bg-gray-200 rounded-full h-2 overflow-hidden">
+                              <div 
+                                className="bg-blue-600 h-2 transition-all duration-300"
+                                style={{ width: `${job.progressPercent}%` }}
+                              />
+                            </div>
+                            <span className="text-xs text-gray-600 font-medium">{job.progressPercent}%</span>
+                          </div>
+                          {job.message && (
+                            <div className="text-xs text-gray-500 truncate max-w-xs" title={job.message}>
+                              {job.message}
+                            </div>
+                          )}
+                        </div>
                       ) : (
-                        <span className="text-gray-400">—</span>
+                        <div className="text-sm text-gray-500">
+                          {job.commentsCount} comments
+                        </div>
                       )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {formatDate(job.createdAt)}
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {job.status === 'completed' || job.status === 'completed_with_errors' ? (
+                        <div className="text-sm">
+                          <div className="text-green-600 font-medium">{job.commentsTransferred} transferred</div>
+                          {job.matchesFound > 0 && job.matchesFound !== job.commentsTransferred && (
+                            <div className="text-xs text-gray-500">{job.matchesFound} matches</div>
+                          )}
+                        </div>
+                      ) : job.status === 'failed' ? (
+                        <span className="text-sm text-red-600">Failed</span>
+                      ) : (
+                        <span className="text-sm text-gray-400">—</span>
+                      )}
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-500 max-w-md truncate">
-                      {job.message || '—'}
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-500">
+                        {formatDate(job.createdAt)}
+                      </div>
+                      {job.duration && (
+                        <div className="text-xs text-gray-400">
+                          {job.duration}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
